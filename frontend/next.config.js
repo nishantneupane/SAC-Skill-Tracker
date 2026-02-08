@@ -2,11 +2,10 @@
  * Next.js configuration file.
  * Purpose: configure Next.js runtime/build options for the frontend application.
  */
-import type { NextConfig } from 'next';
 
-const nextConfig: NextConfig = {
+const nextConfig = {
     reactStrictMode: true,
     swcMinify: true,
 };
 
-export default nextConfig;
+module.exports = nextConfig;
