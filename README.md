@@ -1,2 +1,2 @@
 # SAC-Skill-Tracker
-SAC Skill Tracker is a lightweight web app that helps Student Advisory Committees track, analyze, and visualize member skill growth and engagement.
+SAC Skill Tracker is a web app that helps the Shippensburg Aquatic Club track the progress of their swimmer's skill development.
