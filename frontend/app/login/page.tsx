@@ -6,8 +6,10 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 export default function Login() {
+    const router = useRouter();
     const [isLoading, setIsLoading] = useState(false);
 
     const handleSSOLogin = () => {
@@ -53,6 +55,13 @@ export default function Login() {
                 >
                     {'Need Help?'}
                 </button>
+
+                {/* DEV: Test Skip Login */}
+                <button onClick={() => router.push('/instructor/dashboard')}>DEV: Login Instructor</button>
+
+                <p className="mt-2"> </p>
+
+                <button onClick={() => router.push('/parent/dashboard')}>DEV: Login Parent</button>
 
             </div>
         </div>
