@@ -1,16 +1,15 @@
 /**
  * Home page
- * Purpose: landing/root page for the SAC Skill Tracker app.
+ * Purpose: initial landing page that redirects to login. This is the default route and serves as a simple entry point to the application.
  */
 
 export default function Home() {
     return (
-        <div>
-            <h1>SAC Skill Tracker</h1>
-            <ul>
-                <li><a href="/login-instructor">Instructor Login</a></li>
-                <li><a href="/login-parent">Parent Login</a></li>
-            </ul>
+        <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+            <div className="text-center">
+                <p className="text-gray-600">Redirecting to login page...</p>
+                <script dangerouslySetInnerHTML={{ __html: 'window.location.href = "/login";' }} />
+            </div>
         </div>
     );
 }
