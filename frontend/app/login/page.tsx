@@ -14,10 +14,13 @@ export default function Login() {
 
     const handleSSOLogin = () => {
         setIsLoading(true);
-        // Redirect to SportsEngine/TeamUnify OAuth endpoint
-        // TODO: Replace with actual SportsEngine/TeamUnify SSO URL
-        const ssoUrl = process.env.NEXT_PUBLIC_SSO_LOGIN_URL || 'https://sso.sportssengine.com/oauth/authorize';
-        window.location.href = ssoUrl;
+
+        const clientId = process.env.NEXT_PUBLIC_SPORTSENGINE_CLIENT_ID;
+        const redirectUri = `${window.location.origin}/api/auth/callback`;
+
+        const authUrl = `https://user.sportsengine.com/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code`;
+
+        window.location.href = authUrl;
     };
 
     return (
