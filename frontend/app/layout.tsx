@@ -3,6 +3,8 @@
  * Purpose: global app layout and providers for the Next.js application (applies to all pages).
  */
 
+import './globals.css';
+
 export const metadata = {
     title: 'SAC Skill Tracker',
     description: 'Swimming skill tracking app',
