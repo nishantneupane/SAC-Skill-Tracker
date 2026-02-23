@@ -68,6 +68,7 @@ create table if not exists members (
   first_name text not null,
   last_name text not null,
   date_of_birth date,
+  gender text not null,
   level text,
   created_at timestamptz not null default now()
 );
