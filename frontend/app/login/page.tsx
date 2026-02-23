@@ -1,6 +1,6 @@
 /**
  * Login page
- * Purpose: unified login page using SportsEngine/TeamUnify SSO for all user types
+ * Purpose: Simple login with name and role selection
  */
 
 'use client';
@@ -10,17 +10,60 @@ import { useRouter } from 'next/navigation';
 
 export default function Login() {
     const router = useRouter();
-    const [isLoading, setIsLoading] = useState(false);
+    const [fullName, setFullName] = useState('');
+    const [email, setEmail] = useState('');
+    const [role, setRole] = useState('');
+    const [error, setError] = useState('');
 
-    const handleSSOLogin = () => {
-        setIsLoading(true);
+    // const handleSSOLogin = () => {
+    //     setIsLoading(true);
 
-        const clientId = process.env.NEXT_PUBLIC_SPORTSENGINE_CLIENT_ID;
-        const redirectUri = `${window.location.origin}/api/auth/callback`;
+    //     const clientId = process.env.NEXT_PUBLIC_SPORTSENGINE_CLIENT_ID;
+    //     const redirectUri = `${window.location.origin}/api/auth/callback`;
 
-        const authUrl = `https://user.sportsengine.com/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code`;
+    //     const authUrl = `https://user.sportsengine.com/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code`;
 
-        window.location.href = authUrl;
+    //     window.location.href = authUrl;
+
+    const handleLogin = (e: React.FormEvent) => {
+        e.preventDefault();
+        setError('');
+
+        if (!fullName.trim()) {
+            setError('Please enter your name');
+            return;
+        }
+
+        if (!email.trim()) {
+            setError('Please enter your email');
+            return;
+        }
+
+        if (!role) {
+            setError('Please select a role');
+            return;
+        }
+
+        // Store user info in localStorage
+        localStorage.setItem('user', JSON.stringify({ name: fullName, email, role }));
+
+
+
+        // TODO: query person by email to get person_id
+        // go from there to determine role and redirect to appropriate dashboard
+        // For now, just redirect based on selected role
+
+
+        // Redirect based on role
+        if (role === 'instructor') {
+            router.push('/instructor/dashboard');
+        } else if (role === 'account') {
+            router.push('/account/dashboard');
+        } else if (role === 'admin') {
+            router.push('/admin/dashboard');
+        } else if (role === 'superadmin') {
+            router.push('/super-admin/dashboard');
+        }
     };
 
     return (
@@ -36,36 +79,75 @@ export default function Login() {
                 </div>
 
                 {/* Title and Subtitle */}
+                <h1 className="text-2xl font-bold text-center text-gray-900 mb-1">SAC Skill Tracker</h1>
+                <p className="text-center text-sm text-gray-600 mb-6">Swimming Progress Dashboard</p>
 
-                {/* TODO: Replace with actual app name and tagline (SAC Swim Tracker? ) */}
-                <h1 className="text-2xl font-bold text-center text-gray-900 mb-1">AquaTrack</h1>
-                <p className="text-center text-sm text-gray-600 mb-6">Swimming Analytical Dashboard</p>
+                {/* Login Form */}
+                <form onSubmit={handleLogin} className="space-y-4">
+                    {/* Full Name Input */}
+                    <div>
+                        <label htmlFor="fullName" className="block text-sm font-medium text-gray-700 mb-1">
+                            Full Name
+                        </label>
+                        <input
+                            id="fullName"
+                            type="text"
+                            value={fullName}
+                            onChange={(e) => setFullName(e.target.value)}
+                            placeholder="Enter your full name"
+                            className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                        />
+                    </div>
 
-                {/* SportsEngine/TeamUnify Button */}
-                <button
-                    onClick={handleSSOLogin}
-                    disabled={isLoading}
-                    className="w-full bg-gray-900 hover:bg-gray-800 disabled:bg-gray-600 text-white font-semibold py-3 px-4 rounded-md mb-3 transition duration-200"
-                >
-                    {isLoading ? 'Signing in...' : 'Sign in with SportsEngine'}
-                </button>
+                    {/* Email Input */}
+                    <div>
+                        <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
+                            Email
+                        </label>
+                        <input
+                            id="email"
+                            type="email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            placeholder="Enter your email"
+                            className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                        />
+                    </div>
 
-                {/* Help Button */}
-                {/* TODO: Replace alert with actual help functionality (e.g. contact form, FAQ page, etc.)  */}
-                <button
-                    onClick={() => alert('Please contact your instructor or admin for assistance.')}
-                    className="w-full text-blue-600 hover:text-blue-800 font-semibold py-2 px-1 rounded-md mb-2 transition duration-200"
-                >
-                    {'Need Help?'}
-                </button>
+                    {/* Role Selector */}
+                    <div>
+                        <label htmlFor="role" className="block text-sm font-medium text-gray-700 mb-1">
+                            I am a...
+                        </label>
+                        <select
+                            id="role"
+                            value={role}
+                            onChange={(e) => setRole(e.target.value)}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                        >
+                            <option value="">Select your role</option>
+                            <option value="instructor">Instructor</option>
+                            <option value="account">Parent/Swimmer</option>
+                            <option value="admin">Admin</option>
+                            <option value="superadmin">Super Admin</option>
+                        </select>
+                    </div>
 
-                {/* DEV: Test Skip Login */}
-                <button onClick={() => router.push('/instructor/dashboard')}>DEV: Login Instructor</button>
+                    {/* Error Message */}
+                    {error && (
+                        <div className="text-red-600 text-sm text-center">
+                            {error}
+                        </div>
+                    )}
 
-                <p className="mt-2"> </p>
-
-                <button onClick={() => router.push('/parent/dashboard')}>DEV: Login Parent</button>
-
+                    {/* Submit Button */}
+                    <button
+                        type="submit"
+                        className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-md transition duration-200"
+                    >
+                        Continue
+                    </button>
+                </form>
             </div>
         </div>
     );
