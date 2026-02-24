@@ -6,6 +6,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 interface SwimmerCard {
     id: string;
@@ -38,6 +39,7 @@ function getInitials(name: string) {
 }
 
 export default function AccountDashboard() {
+    const router = useRouter();
     const [userName, setUserName] = useState('');
 
     useEffect(() => {
@@ -142,6 +144,15 @@ export default function AccountDashboard() {
                         <div className="h-10 w-10 rounded-full bg-gray-200 flex items-center justify-center text-sm font-semibold text-gray-700">
                             {userName ? getInitials(userName) : 'GU'}
                         </div>
+                        <button
+                            onClick={() => {
+                                localStorage.removeItem('user');
+                                router.push('/login');
+                            }}
+                            className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition"
+                        >
+                            Sign Out
+                        </button>
                     </div>
                 </div>
             </header>
