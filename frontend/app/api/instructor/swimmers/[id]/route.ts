@@ -88,6 +88,38 @@ async function instructorCanAccessMember(
   return canAccess ? { ok: true } : { ok: false, error: 'You do not have access to this swimmer.' };
 }
 
+async function getSharedClassIdsForInstructorAndMember(
+  instructorPersonId: string,
+  memberId: string
+): Promise<{ sharedClassIds: string[]; error?: string }> {
+  const supabaseAdmin = getSupabaseAdminClient();
+
+  const { data: taughtClasses, error: taughtClassesError } = await supabaseAdmin
+    .from('class_instructor')
+    .select('class_id')
+    .eq('person_id', instructorPersonId);
+
+  if (taughtClassesError) {
+    return { sharedClassIds: [], error: `Failed to load instructor classes: ${taughtClassesError.message}` };
+  }
+
+  const { data: memberEnrollments, error: memberEnrollmentsError } = await supabaseAdmin
+    .from('enrollment')
+    .select('class_id')
+    .eq('member_id', memberId);
+
+  if (memberEnrollmentsError) {
+    return { sharedClassIds: [], error: `Failed to load member enrollments: ${memberEnrollmentsError.message}` };
+  }
+
+  const taughtClassIds = new Set((taughtClasses ?? []).map((row) => row.class_id));
+  const sharedClassIds = (memberEnrollments ?? [])
+    .map((row) => row.class_id)
+    .filter((classId) => taughtClassIds.has(classId));
+
+  return { sharedClassIds };
+}
+
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const supabaseAdmin = getSupabaseAdminClient();
@@ -108,19 +140,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    const { data: memberEnrollments, error: memberEnrollmentsError } = await supabaseAdmin
-      .from('enrollment')
-      .select('class_id')
-      .eq('member_id', memberId);
-
-    if (memberEnrollmentsError) {
-      return NextResponse.json(
-        { error: `Failed to load member enrollments: ${memberEnrollmentsError.message}` },
-        { status: 500 }
-      );
+    const { sharedClassIds, error: sharedClassError } =
+      await getSharedClassIdsForInstructorAndMember(instructor.person_id, memberId);
+    if (sharedClassError) {
+      return NextResponse.json({ error: sharedClassError }, { status: 500 });
     }
-
-    const memberClassIds = (memberEnrollments ?? []).map((row) => row.class_id);
 
     const { data: member, error: memberError } = await supabaseAdmin
       .from('member')
@@ -142,7 +166,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const { data: classRows, error: classRowsError } = await supabaseAdmin
       .from('class_entity')
       .select('class_id, name, schedule')
-      .in('class_id', memberClassIds);
+      .in('class_id', sharedClassIds);
 
     if (classRowsError) {
       return NextResponse.json(
@@ -408,22 +432,22 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
+    const { sharedClassIds, error: sharedClassError } =
+      await getSharedClassIdsForInstructorAndMember(instructor.person_id, memberId);
+    if (sharedClassError) {
+      return NextResponse.json({ error: sharedClassError }, { status: 500 });
+    }
+
     let classId = body.classId;
+    if (classId && !sharedClassIds.includes(classId)) {
+      return NextResponse.json(
+        { error: 'Selected class is not assigned to this instructor for this swimmer.' },
+        { status: 403 }
+      );
+    }
+
     if (!classId) {
-      const { data: classRows, error: classRowsError } = await supabaseAdmin
-        .from('enrollment')
-        .select('class_id')
-        .eq('member_id', memberId)
-        .limit(1);
-
-      if (classRowsError) {
-        return NextResponse.json(
-          { error: `Failed to resolve class for note: ${classRowsError.message}` },
-          { status: 500 }
-        );
-      }
-
-      classId = classRows?.[0]?.class_id;
+      classId = sharedClassIds[0];
     }
 
     if (!classId) {
