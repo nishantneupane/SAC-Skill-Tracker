@@ -11,10 +11,9 @@ import InstructorClassView from './instructorClassView';
 
 interface InstructorClass {
   id: string;
-  time: string;
-  level: string;
+  name: string;
+  schedule: string;
   swimmers: number;
-  location: string;
 }
 
 interface RosterSwimmerCard {
@@ -22,6 +21,7 @@ interface RosterSwimmerCard {
   name: string;
   level: string;
   nextSession: string;
+  classIds: string[];
 }
 
 interface NoteItem {
@@ -34,8 +34,17 @@ interface NoteItem {
 interface SkillItem {
   id: string;
   name: string;
-  mastered: boolean; // true if date_acquired is not null in member_skill
+  mastered: boolean;
   dateAcquired?: string;
+}
+
+interface DashboardPayload {
+  userName: string;
+  classes: InstructorClass[];
+  swimmers: RosterSwimmerCard[];
+  skillsBySwimmer: Record<string, SkillItem[]>;
+  notes: NoteItem[];
+  error?: string;
 }
 
 function getInitials(name: string) {
@@ -54,95 +63,100 @@ function formatPct(mastered: number, total: number) {
 
 export default function InstructorDashboard() {
   const router = useRouter();
-  const [userName, setUserName] = useState('');
+  const [userName, setUserName] = useState('Guest User');
   const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
 
+  const [todayClasses, setTodayClasses] = useState<InstructorClass[]>([]);
+  const [swimmers, setSwimmers] = useState<RosterSwimmerCard[]>([]);
+  const [skillsBySwimmer, setSkillsBySwimmer] = useState<Record<string, SkillItem[]>>({});
+  const [notes, setNotes] = useState<NoteItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
+
   useEffect(() => {
-    const stored = localStorage.getItem('user');
-    if (stored) {
-      const userData = JSON.parse(stored);
-      setUserName(userData.name || '');
+    let isMounted = true;
+
+    async function loadDashboardData() {
+      try {
+        setIsLoading(true);
+        setError('');
+
+        const stored = localStorage.getItem('user');
+        if (!stored) {
+          throw new Error('Missing local user session. Please log in again.');
+        }
+
+        const userData = JSON.parse(stored);
+        const localName = userData.name || 'Guest User';
+        const email = userData.email;
+
+        setUserName(localName);
+
+        if (!email) {
+          throw new Error('Missing user email from login session.');
+        }
+
+        const response = await fetch(`/api/instructor/dashboard?email=${encodeURIComponent(email)}`);
+        const payload = (await response.json()) as DashboardPayload;
+
+        if (!response.ok) {
+          throw new Error(payload.error || 'Failed to load instructor dashboard data.');
+        }
+
+        if (!isMounted) return;
+
+        setUserName(payload.userName || localName);
+        setTodayClasses(payload.classes ?? []);
+        setSwimmers(payload.swimmers ?? []);
+        setSkillsBySwimmer(payload.skillsBySwimmer ?? {});
+        setNotes(payload.notes ?? []);
+      } catch (fetchError) {
+        if (!isMounted) return;
+
+        const message =
+          fetchError instanceof Error ? fetchError.message : 'Unexpected error loading dashboard.';
+
+        setError(message);
+        setTodayClasses([]);
+        setSwimmers([]);
+        setSkillsBySwimmer({});
+        setNotes([]);
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
     }
 
-    // TODO: using person_id from user data, query instructor assignments
-    // e.g., instructor_class + enrollment -> members for roster
+    loadDashboardData();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
-  // TODO: query instructor_class for today's schedule,
-  // join class_entity for time/location/level,
-  // join enrollment for swimmer counts
+  const swimmersByClass = useMemo(() => {
+    const byClass: Record<string, RosterSwimmerCard[]> = {};
+    swimmers.forEach((swimmer) => {
+      swimmer.classIds.forEach((classId) => {
+        if (!byClass[classId]) byClass[classId] = [];
+        byClass[classId].push(swimmer);
+      });
+    });
+    return byClass;
+  }, [swimmers]);
 
-  const todayClasses: InstructorClass[] = useMemo(
-    () => [
-      { id: 'c1', time: '4:00 PM', level: 'Level 1', swimmers: 8, location: 'Pool A' },
-      { id: 'c2', time: '5:00 PM', level: 'Level 2', swimmers: 12, location: 'Pool A' },
-      { id: 'c3', time: '6:00 PM', level: 'Level 3', swimmers: 10, location: 'Pool B' },
-    ],
-    []
+  const selectedClass = useMemo(
+    () => todayClasses.find((cls) => cls.id === selectedClassId) ?? null,
+    [todayClasses, selectedClassId]
   );
 
-  // TODO: roster should come from instructor roster (all members assigned to instructor)
-  // join member -> person for swimmer names, join enrollment/class_entity for nextSession
-  // for now we can hardcode a few swimmers and their next session times
-
-  const swimmers: RosterSwimmerCard[] = useMemo(
-    () => [
-      { id: 'swimmer-1', name: 'Emma Johnson', level: 'Level 2', nextSession: 'Feb 12, 2026 at 5:00 PM' },
-      { id: 'swimmer-2', name: 'Liam Smith', level: 'Level 3', nextSession: 'Feb 12, 2026 at 6:00 PM' },
-      { id: 'swimmer-3', name: 'Olivia Brown', level: 'Level 2', nextSession: 'Feb 12, 2026 at 5:00 PM' },
-      { id: 'swimmer-4', name: 'Noah Davis', level: 'Level 1', nextSession: 'Feb 12, 2026 at 4:00 PM' },
-    ],
-    []
-  );
-
-  // TODO: query member_skill joined with skill by member_id
-  // to get individual skill names, progress, and date_acquired
-  // for now we can hardcode some skills for each swimmer, with a mix of mastered/unmastered and dates
-
-  const skillsBySwimmer: Record<string, SkillItem[]> = useMemo(
-    () => ({
-      'swimmer-1': [
-        { id: 's1', name: 'Freestyle breathing', mastered: true, dateAcquired: 'Feb 10, 2026' },
-        { id: 's2', name: 'Backstroke arms', mastered: true, dateAcquired: 'Jan 28, 2026' },
-        { id: 's3', name: 'Flip turn', mastered: false },
-        { id: 's4', name: 'Butterfly kick', mastered: false },
-      ],
-      'swimmer-2': [
-        { id: 's5', name: 'Streamline push-off', mastered: true, dateAcquired: 'Feb 6, 2026' },
-        { id: 's6', name: 'Breaststroke timing', mastered: false },
-        { id: 's7', name: 'Underwater dolphin', mastered: false },
-      ],
-      'swimmer-3': [
-        { id: 's8', name: 'Water comfort', mastered: true, dateAcquired: 'Feb 8, 2026' },
-        { id: 's9', name: 'Freestyle arms', mastered: true, dateAcquired: 'Feb 1, 2026' },
-        { id: 's10', name: 'Backstroke kick', mastered: false },
-      ],
-      'swimmer-4': [
-        { id: 's11', name: 'Bubbles & breath control', mastered: false },
-        { id: 's12', name: 'Front float', mastered: true, dateAcquired: 'Feb 9, 2026' },
-        { id: 's13', name: 'Back float', mastered: false },
-      ],
-    }),
-    []
-  );
-
-  // TODO: query evaluation/notes by instructor_id (or by members assigned),
-  // order by date desc
-
-  const notes: NoteItem[] = useMemo(
-    () => [
-      { id: 'n1', swimmerName: 'Emma Johnson', note: 'Breathing timing improved; needs tighter streamline.', date: 'Feb 10, 2026' },
-      { id: 'n2', swimmerName: 'Noah Davis', note: 'Great effort today. Still hesitant to put face in water.', date: 'Feb 9, 2026' },
-      { id: 'n3', swimmerName: 'Liam Smith', note: 'Strong kick set; work on breaststroke coordination next.', date: 'Feb 8, 2026' },
-    ],
-    []
-  );
-
-  // If a class is selected, show the class view
-  if (selectedClassId) {
+  if (selectedClassId && selectedClass) {
     return (
       <InstructorClassView
-        classId={selectedClassId}
+        classInfo={selectedClass}
+        swimmers={swimmersByClass[selectedClassId] ?? []}
+        skillsBySwimmer={skillsBySwimmer}
         onBack={() => setSelectedClassId(null)}
         onSwimmerClick={(swimmerId) => router.push(`/instructor/swimmers/${swimmerId}`)}
       />
@@ -179,13 +193,32 @@ export default function InstructorDashboard() {
       </header>
 
       <main className="max-w-6xl mx-auto px-6 py-8 space-y-8">
-        {/* Top row: Today’s schedule + quick stats */}
+        {isLoading && (
+          <div className="rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm text-gray-600">
+            Loading instructor dashboard...
+          </div>
+        )}
+
+        {!isLoading && error && (
+          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error}
+          </div>
+        )}
+
         <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Today’s classes - embed the date next to todays classes */}
           <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 shadow-sm">
             <div className="px-6 py-4 border-b border-gray-100">
-              <h2 className="text-sm font-semibold text-gray-900">Today's Classes <time className="text-xs text-gray-500">{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</time></h2> 
-              <p className="text-xs text-gray-500">Tap a class to take attendance or review roster.</p>
+              <h2 className="text-sm font-semibold text-gray-900">
+                Today's Classes{' '}
+                <time className="text-xs text-gray-500">
+                  {new Date().toLocaleDateString('en-US', {
+                    weekday: 'long',
+                    month: 'long',
+                    day: 'numeric',
+                  })}
+                </time>
+              </h2>
+              <p className="text-xs text-gray-500">Tap a class to review roster.</p>
             </div>
 
             <div className="divide-y divide-gray-100">
@@ -198,11 +231,10 @@ export default function InstructorDashboard() {
                   <div className="flex items-center justify-between gap-4">
                     <div className="flex items-center gap-4">
                       <div className="px-3 py-2 rounded-lg bg-gray-100">
-                        <p className="text-sm font-semibold text-gray-900">{cls.time}</p>
+                        <p className="text-sm font-semibold text-gray-900">{cls.schedule}</p>
                       </div>
                       <div>
-                        <p className="text-sm font-semibold text-gray-900">{cls.level}</p>
-                        <p className="text-xs text-gray-500">{cls.location}</p>
+                        <p className="text-sm font-semibold text-gray-900">{cls.name}</p>
                       </div>
                     </div>
                     <span className="inline-flex items-center px-3 py-1 text-xs font-semibold bg-gray-900 text-white rounded-full">
@@ -211,16 +243,23 @@ export default function InstructorDashboard() {
                   </div>
                 </button>
               ))}
+
+              {!isLoading && !error && todayClasses.length === 0 && (
+                <div className="px-6 py-6 text-sm text-gray-500">No classes assigned yet.</div>
+              )}
             </div>
           </div>
 
-          {/* Quick stats */}
           <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
             {(() => {
               const totalSwimmers = swimmers.length;
-              const totalSkills = swimmers.reduce((acc, s) => acc + (skillsBySwimmer[s.id]?.length ?? 0), 0);
+              const totalSkills = swimmers.reduce(
+                (acc, swimmer) => acc + (skillsBySwimmer[swimmer.id]?.length ?? 0),
+                0
+              );
               const masteredSkills = swimmers.reduce(
-                (acc, s) => acc + (skillsBySwimmer[s.id]?.filter((x) => x.mastered).length ?? 0),
+                (acc, swimmer) =>
+                  acc + (skillsBySwimmer[swimmer.id]?.filter((skill) => skill.mastered).length ?? 0),
                 0
               );
               const pct = formatPct(masteredSkills, totalSkills);
@@ -259,24 +298,11 @@ export default function InstructorDashboard() {
           </div>
         </section>
 
-        {/* Swimmer roster cards */}
         <section>
           <div className="flex items-center justify-between mb-4">
             <span className="inline-flex items-center px-3 py-1 text-xs font-semibold bg-white border border-gray-200 rounded-full">
               My Swimmers
             </span>
-
-            {/* Optional lightweight search input (pure UI for now) */}
-            <div className="hidden md:flex items-center gap-2">
-              <input
-                className="h-9 w-64 rounded-lg border border-gray-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-gray-200"
-                placeholder="Search swimmers..."
-                // TODO: wire to state filter
-              />
-              <button className="h-9 px-3 rounded-lg border border-gray-200 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50">
-                Filter
-              </button>
-            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -342,7 +368,7 @@ export default function InstructorDashboard() {
                       ))}
 
                       {skills.length > 4 && (
-                        <p className="text-xs text-gray-400 pt-1">+ {skills.length - 4} more…</p>
+                        <p className="text-xs text-gray-400 pt-1">+ {skills.length - 4} more...</p>
                       )}
                     </div>
                   </div>
@@ -350,9 +376,14 @@ export default function InstructorDashboard() {
               );
             })}
           </div>
+
+          {!isLoading && !error && swimmers.length === 0 && (
+            <div className="mt-6 rounded-lg border border-gray-200 bg-white px-4 py-6 text-sm text-gray-600">
+              No swimmers assigned to your classes yet.
+            </div>
+          )}
         </section>
 
-        {/* Recent notes */}
         <section>
           <div className="flex items-center gap-3 mb-4">
             <span className="inline-flex items-center px-3 py-1 text-xs font-semibold bg-white border border-gray-200 rounded-full">
@@ -363,7 +394,7 @@ export default function InstructorDashboard() {
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
             <div className="px-6 py-4 border-b border-gray-100">
               <h2 className="text-sm font-semibold text-gray-900">Instructor Notes</h2>
-              <p className="text-xs text-gray-500">Recent feedback you’ve logged across swimmers.</p>
+              <p className="text-xs text-gray-500">Recent feedback you have logged across swimmers.</p>
             </div>
 
             <div className="divide-y divide-gray-100">
@@ -381,6 +412,10 @@ export default function InstructorDashboard() {
                   <p className="text-sm text-gray-600 mt-2">{note.note}</p>
                 </div>
               ))}
+
+              {!isLoading && !error && notes.length === 0 && (
+                <div className="px-6 py-6 text-sm text-gray-500">No notes logged yet.</div>
+              )}
             </div>
           </div>
         </section>
