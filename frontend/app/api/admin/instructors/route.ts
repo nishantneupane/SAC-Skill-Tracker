@@ -104,12 +104,46 @@ export async function DELETE(request: NextRequest) {
 
         if (!personOrg) return NextResponse.json({ error: 'Instructor not found' }, { status: 404 });
 
-        // Delete role and deactivate
-        await supabase.from('person_org_role').delete()
-            .eq('person_organization_id', personOrg.person_organization_id).eq('role_id', roleId);
+        // Remove only the instructor role.
+        const { error: removeRoleError } = await supabase
+            .from('person_org_role')
+            .delete()
+            .eq('person_organization_id', personOrg.person_organization_id)
+            .eq('role_id', roleId);
 
-        await supabase.from('person_organization')
-            .update({ status: 'inactive' }).eq('person_organization_id', personOrg.person_organization_id);
+        if (removeRoleError) {
+            return NextResponse.json(
+                { error: 'Failed to remove instructor role: ' + removeRoleError.message },
+                { status: 500 }
+            );
+        }
+
+        // Keep org membership active when other org-scoped roles still exist.
+        const { data: remainingRoles, error: remainingRolesError } = await supabase
+            .from('person_org_role')
+            .select('role_id')
+            .eq('person_organization_id', personOrg.person_organization_id);
+
+        if (remainingRolesError) {
+            return NextResponse.json(
+                { error: 'Failed to verify remaining roles: ' + remainingRolesError.message },
+                { status: 500 }
+            );
+        }
+
+        if (!remainingRoles || remainingRoles.length === 0) {
+            const { error: deactivateError } = await supabase
+                .from('person_organization')
+                .update({ status: 'inactive' })
+                .eq('person_organization_id', personOrg.person_organization_id);
+
+            if (deactivateError) {
+                return NextResponse.json(
+                    { error: 'Failed to update membership status: ' + deactivateError.message },
+                    { status: 500 }
+                );
+            }
+        }
 
         return NextResponse.json({ success: true });
     } catch (error) {
