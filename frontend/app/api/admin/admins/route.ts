@@ -1,6 +1,6 @@
 /**
  * Admin Admins API Route
- * Purpose: list org admins and promote people to org_admin role
+ * Purpose: list org admins, promote instructors to org_admin role, and demote admins
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -175,6 +175,61 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: true });
     } catch (error) {
         console.error('Admins POST error:', error);
+        return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    }
+}
+
+// DELETE: Demote an org_admin back to just an instructor (removes org_admin role).
+export async function DELETE(request: NextRequest) {
+    try {
+        const email = request.nextUrl.searchParams.get('email');
+        const person_id = request.nextUrl.searchParams.get('person_id');
+
+        if (!email || !person_id) {
+            return NextResponse.json({ error: 'Email and person_id are required' }, { status: 400 });
+        }
+
+        const supabase = getSupabaseAdminClient();
+        const orgId = await getOrgIdByEmail(supabase, email);
+        if (!orgId) {
+            return NextResponse.json(
+                { error: 'Failed to find organization' },
+                { status: 500 }
+            );
+        }
+
+        const { data: targetPersonOrg, error: targetPersonOrgError } = await supabase
+            .from('person_organization')
+            .select('person_organization_id')
+            .eq('person_id', person_id)
+            .eq('organization_id', orgId)
+            .eq('status', 'active')
+            .single();
+
+        if (targetPersonOrgError || !targetPersonOrg) {
+            return NextResponse.json(
+                { error: 'Person not found in organization' },
+                { status: 404 }
+            );
+        }
+
+        // Remove the org_admin role (keeps instructor role)
+        const { error: demoteError } = await supabase
+            .from('person_org_role')
+            .delete()
+            .eq('person_organization_id', targetPersonOrg.person_organization_id)
+            .eq('role_id', ORG_ADMIN_ROLE_ID);
+
+        if (demoteError) {
+            return NextResponse.json(
+                { error: 'Failed to demote admin: ' + demoteError.message },
+                { status: 500 }
+            );
+        }
+
+        return NextResponse.json({ success: true });
+    } catch (error) {
+        console.error('Admins DELETE error:', error);
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
     }
 }
