@@ -9,6 +9,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import InstructorManager from "@/components/InstructorManager";
 import ClassManager from "@/components/ClassManager";
+import ImportRoster from "@/components/ImportRoster";
 
 // Dashboard statistics from admin API
 interface AdminStats {
@@ -961,61 +962,7 @@ export default function AdminDashboard() {
               </h2>
             </div>
 
-            <div className="p-4 sm:p-6">
-              <div className="border-2 border-dashed border-gray-200 rounded-lg sm:rounded-xl p-6 sm:p-10 flex flex-col items-center text-center mb-4 sm:mb-6">
-                <svg
-                  className="w-10 h-10 sm:w-12 sm:h-12 text-gray-300 mb-2 sm:mb-3"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <ellipse cx="12" cy="12" rx="9" ry="4" strokeWidth={1.5} />
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={1.5}
-                    d="M3 12c0 2.21 4.03 4 9 4s9-1.79 9-4M3 16c0 2.21 4.03 4 9 4s9-1.79 9-4"
-                  />
-                </svg>
-                <p className="text-sm sm:text-base font-semibold text-gray-900 mb-1">
-                  Import Roster Data
-                </p>
-                <p className="text-xs sm:text-sm text-gray-500 mb-4 sm:mb-5">
-                  Import swimmer roster, levels, and class assignments from
-                  SportsEngine
-                </p>
-                <div className="flex gap-2 sm:gap-3">
-                  <button className="flex items-center gap-1.5 sm:gap-2 border border-gray-300 text-gray-700 text-xs sm:text-sm font-medium px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg hover:bg-gray-50 transition">
-                    <svg
-                      className="w-3.5 h-3.5 sm:w-4 sm:h-4"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
-                      />
-                    </svg>
-                    Upload CSV
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <p className="text-xs sm:text-sm font-semibold text-gray-900 mb-2">
-                  Supported Import Options:
-                </p>
-                <ul className="text-xs sm:text-sm text-gray-500 space-y-1">
-                  <li>• Bulk roster updates from SportsEngine API</li>
-                  <li>• CSV file upload for manual imports</li>
-                  <li>• Level and class assignment synchronization</li>
-                  <li>• Parent contact information updates</li>
-                </ul>
-              </div>
-            </div>
+            <ImportRoster />
           </div>
         )}
 

@@ -17,16 +17,6 @@ export default function Login() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // const handleSSOLogin = () => {
-  //     setIsLoading(true);
-
-  //     const clientId = process.env.NEXT_PUBLIC_SPORTSENGINE_CLIENT_ID;
-  //     const redirectUri = `${window.location.origin}/api/auth/callback`;
-
-  //     const authUrl = `https://user.sportsengine.com/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code`;
-
-  //     window.location.href = authUrl;
-
   const [password, setPassword] = useState("");
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -40,27 +30,28 @@ export default function Login() {
       setLoading(true);
 
       // Authenticate user
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+      // const { data, error } = await supabase.auth.signInWithPassword({
+      //   email,
+      //   password,
+      // });
 
-      console.log("Login Response:", { data, error });
+      localStorage.setItem("user", JSON.stringify({ email })); // Store email for dashboard data fetching
+      // console.log("Login Response:", { data, error });
       if (error) throw error;
 
-      await supabase.auth.refreshSession();
+      // await supabase.auth.refreshSession();
 
-      const { data: person, error: personError } = await supabase
-        .from("person")
-        .select("*")
-        .eq("auth_user_id", data.user.id)
-        .maybeSingle();
+      // const { data: person, error: personError } = await supabase
+      //   .from("person")
+      //   .select("*")
+      //   .eq("auth_user_id", data.user.id)
+      //   .maybeSingle();
 
-      if (personError) throw personError;
-      if (!person) throw new Error("User profile not found");
+      // if (personError) throw personError;
+      // if (!person) throw new Error("User profile not found");
 
       // Redirect based on role
-      switch (person.person_type) {
+      switch (role) {
         case "admin":
           router.push("/admin/dashboard");
           break;
