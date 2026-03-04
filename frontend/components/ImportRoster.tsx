@@ -1,15 +1,92 @@
 import { useState } from "react";
+import Papa from "papaparse";
 
 export default function ImportRoster() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+
+  const requiredHeaders = [
+    "Memb. First Name",
+    "Memb. Last Name",
+    "Acct. First Name",
+    "Acct. Last Name",
+    "Email",
+    "Gender",
+    "Birthday",
+  ];
 
   const handleFile = (file: File) => {
     if (file.type !== "text/csv") {
       alert("Only CSV files allowed");
       return;
     }
-    setSelectedFile(file);
+
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: (results) => {
+        const headers = results.meta.fields;
+
+        const missingHeaders = requiredHeaders.filter(
+          (h) => !headers?.includes(h),
+        );
+
+        if (missingHeaders.length > 0) {
+          alert(`Missing columns: ${missingHeaders.join(", ")}`);
+          return;
+        }
+
+        const rows = results.data.map((row: any) => ({
+          first_name: row["Memb. First Name"]?.trim(),
+          last_name: row["Memb. Last Name"]?.trim(),
+          acc_first_name: row["Acct. First Name"]?.trim(),
+          acc_last_name: row["Acct. Last Name"]?.trim(),
+          email: row["Email"]?.toLowerCase().trim(),
+          gender: row["Gender"],
+          birthday: row["Birthday"],
+        }));
+
+        const errors: string[] = [];
+
+        rows.forEach((row, index) => {
+          const rowNumber = index + 2;
+
+          if (!row.first_name)
+            errors.push(`Row ${rowNumber}: Missing member first name`);
+
+          if (!row.last_name)
+            errors.push(`Row ${rowNumber}: Missing member last name`);
+
+          if (!row.acc_first_name)
+            errors.push(`Row ${rowNumber}: Missing account first name`);
+
+          if (!row.acc_last_name)
+            errors.push(`Row ${rowNumber}: Missing account last name`);
+
+          if (!row.email) errors.push(`Row ${rowNumber}: Missing email`);
+
+          // Email format check
+          if (row.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.email))
+            errors.push(`Row ${rowNumber}: Invalid email format`);
+
+          // Gender validation (optional but restricted)
+          const allowedGenders = ["Male", "Female", "M", "F"];
+          if (row.gender && !allowedGenders.includes(row.gender))
+            errors.push(`Row ${rowNumber}: Invalid gender value`);
+
+          // Birthday validation (basic date check)
+          if (row.birthday && isNaN(Date.parse(row.birthday)))
+            errors.push(`Row ${rowNumber}: Invalid birthday format`);
+        });
+        if (errors.length > 0) {
+          alert(errors.slice(0, 5).join("\n")); // show first 5 errors
+          return;
+        }
+
+        console.log("CSV is valid. Ready to send.");
+        setSelectedFile(file);
+      },
+    });
   };
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
