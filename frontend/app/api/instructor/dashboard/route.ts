@@ -93,6 +93,18 @@ export async function GET(request: NextRequest) {
     const classIds = Array.from(new Set((assignments ?? []).map((row) => row.class_id)));
     const userName = `${person.first_name ?? ''} ${person.last_name ?? ''}`.trim() || person.email;
 
+    const { data: directAssignments, error: directAssignmentsError } = await supabaseAdmin
+      .from('instructor_member_assignment')
+      .select('member_id')
+      .eq('instructor_person_id', person.person_id);
+
+    if (directAssignmentsError) {
+      return NextResponse.json(
+        { error: `Failed to load direct instructor assignments: ${directAssignmentsError.message}` },
+        { status: 500 }
+      );
+    }
+
     // Fetch instructor's organization
     const { data: personOrg, error: personOrgError } = await supabaseAdmin
       .from('person_organization')
@@ -110,7 +122,9 @@ export async function GET(request: NextRequest) {
       if (org?.name) organizationName = org.name;
     }
 
-    if (classIds.length === 0) {
+    const directMemberIds = Array.from(new Set((directAssignments ?? []).map((row) => row.member_id)));
+
+    if (classIds.length === 0 && directMemberIds.length === 0) {
       return NextResponse.json({
         userName,
         organizationName,
@@ -121,10 +135,12 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const { data: classes, error: classesError } = await supabaseAdmin
-      .from('class_entity')
-      .select('class_id, name, schedule')
-      .in('class_id', classIds);
+    const { data: classes, error: classesError } = classIds.length
+      ? await supabaseAdmin
+          .from('class_entity')
+          .select('class_id, name, schedule')
+          .in('class_id', classIds)
+      : { data: [], error: null };
 
     if (classesError) {
       return NextResponse.json(
@@ -133,10 +149,12 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const { data: enrollments, error: enrollmentsError } = await supabaseAdmin
-      .from('enrollment')
-      .select('member_id, class_id')
-      .in('class_id', classIds);
+    const { data: enrollments, error: enrollmentsError } = classIds.length
+      ? await supabaseAdmin
+          .from('enrollment')
+          .select('member_id, class_id')
+          .in('class_id', classIds)
+      : { data: [], error: null };
 
     if (enrollmentsError) {
       return NextResponse.json(
@@ -145,7 +163,9 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const memberIds = Array.from(new Set((enrollments ?? []).map((row) => row.member_id)));
+    const memberIds = Array.from(
+      new Set([...(enrollments ?? []).map((row) => row.member_id), ...directMemberIds])
+    );
     const memberToClasses = new Map<string, string[]>();
 
     (enrollments ?? []).forEach((row) => {
