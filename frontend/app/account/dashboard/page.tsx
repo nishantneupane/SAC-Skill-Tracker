@@ -31,6 +31,7 @@ interface SkillItem {
 
 interface DashboardPayload {
   userName: string;
+  organizationName?: string;
   swimmers: SwimmerCard[];
   skillsBySwimmer: Record<string, SkillItem[]>;
   notes: NoteItem[];
@@ -48,6 +49,7 @@ function getInitials(name: string) {
 export default function AccountDashboard() {
   const router = useRouter();
   const [userName, setUserName] = useState('Guest User');
+  const [organizationName, setOrganizationName] = useState('SAC Skill Tracker');
   const [swimmers, setSwimmers] = useState<SwimmerCard[]>([]);
   const [skillsBySwimmer, setSkillsBySwimmer] = useState<Record<string, SkillItem[]>>({});
   const [notes, setNotes] = useState<NoteItem[]>([]);
@@ -88,6 +90,7 @@ export default function AccountDashboard() {
         if (!isMounted) return;
 
         setUserName(payload.userName || localName);
+        setOrganizationName(payload.organizationName || 'SAC Skill Tracker');
         setSwimmers(payload.swimmers ?? []);
         setSkillsBySwimmer(payload.skillsBySwimmer ?? {});
         setNotes(payload.notes ?? []);
@@ -115,19 +118,24 @@ export default function AccountDashboard() {
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white border-b border-gray-200">
-        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-semibold text-gray-900">SAC Skill Tracker</h1>
-            <p className="text-sm text-gray-500">Parent/Adult Swimmer Dashboard</p>
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="text-right">
-              <p className="text-sm font-medium text-gray-900">{userName || 'Guest User'}</p>
-              <span className="inline-flex items-center px-2 py-1 text-xs font-semibold bg-gray-100 text-gray-700 rounded-full">
-                Parent/Adult Swimmer
-              </span>
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 py-3 sm:py-4 flex items-center justify-between">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className="w-8 h-8 sm:w-9 sm:h-9 bg-green-600 rounded-lg sm:rounded-xl flex items-center justify-center flex-shrink-0">
+              <svg className="w-4 h-4 sm:w-5 sm:h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
             </div>
-            <div className="h-10 w-10 rounded-full bg-gray-200 flex items-center justify-center text-sm font-semibold text-gray-700">
+            <div className="min-w-0">
+              <p className="text-xs sm:text-sm font-bold text-gray-900 truncate">{organizationName}</p>
+              <p className="text-[10px] sm:text-xs text-gray-500 hidden sm:block">Parent/Swimmer Dashboard</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className="text-right hidden md:block">
+              <p className="text-sm font-medium text-gray-900">{userName || 'Guest User'}</p>
+              <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">Parent/Swimmer</span>
+            </div>
+            <div className="h-8 w-8 sm:h-9 sm:w-9 rounded-full bg-gray-800 flex items-center justify-center text-[10px] sm:text-xs font-semibold text-white flex-shrink-0">
               {userName ? getInitials(userName) : 'GU'}
             </div>
             <button
@@ -135,139 +143,173 @@ export default function AccountDashboard() {
                 localStorage.removeItem('user');
                 router.push('/login');
               }}
-              className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition"
+              className="h-8 w-8 sm:h-9 sm:w-9 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-500 flex-shrink-0"
             >
-              Sign Out
+              <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
             </button>
           </div>
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-6 py-8">
+      <main className="max-w-7xl mx-auto px-3 sm:px-6 py-4 sm:py-8">
+        {/* Loading Banner */}
         {isLoading && (
-          <div className="mb-6 rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm text-gray-600">
-            Loading dashboard data...
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 sm:p-4 flex items-center gap-2 sm:gap-3">
+            <div className="animate-spin rounded-full h-4 w-4 sm:h-5 sm:w-5 border-b-2 border-green-600 flex-shrink-0"></div>
+            <p className="text-xs sm:text-sm text-blue-800">Loading dashboard data...</p>
           </div>
         )}
 
+        {/* Error Banner */}
         {!isLoading && error && (
-          <div className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {error}
+          <div className="bg-red-50 border border-red-200 rounded-lg p-3 sm:p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-2 sm:gap-3 min-w-0 flex-1">
+                <svg className="w-4 h-4 sm:w-5 sm:h-5 text-red-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <div className="min-w-0">
+                  <p className="text-xs sm:text-sm font-medium text-red-800">Failed to load data</p>
+                  <p className="text-[10px] sm:text-xs text-red-700 mt-0.5 sm:mt-1 break-words">{error}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => window.location.reload()}
+                className="text-[10px] sm:text-xs bg-red-100 hover:bg-red-200 text-red-800 px-2 sm:px-3 py-1 sm:py-1.5 rounded-md transition-colors whitespace-nowrap flex-shrink-0"
+              >
+                Retry
+              </button>
+            </div>
           </div>
         )}
 
-        <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {swimmers.map((swimmer) => (
-            <div key={swimmer.id} className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-full bg-gray-100 flex items-center justify-center text-sm font-semibold text-gray-700">
-                    {getInitials(swimmer.name)}
+        {/* My Swimmers Section */}
+        <section>
+          <div className="flex items-center justify-between mb-4">
+            <span className="inline-flex items-center px-3 py-1 text-xs font-semibold bg-white border border-gray-200 rounded-full">
+              My Swimmers
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+            {swimmers.map((swimmer) => (
+              <div key={swimmer.id} className="bg-white rounded-xl border border-gray-200 p-5 sm:p-6 shadow-sm hover:border-gray-300 transition">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-full bg-gray-100 flex items-center justify-center text-sm font-semibold text-gray-700">
+                      {getInitials(swimmer.name)}
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900">{swimmer.name}</p>
+                      <p className="text-xs text-gray-500">{swimmer.level}</p>
+                      <p className="text-xs text-gray-400 mt-1">Next: {swimmer.nextSession}</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-sm font-semibold text-gray-900">{swimmer.name}</p>
-                    <p className="text-xs text-gray-500">{swimmer.level}</p>
-                  </div>
+                  <span className="inline-flex items-center px-3 py-1 text-xs font-semibold bg-gray-900 text-white rounded-full">
+                    {(() => {
+                      const skills = skillsBySwimmer[swimmer.id] || [];
+                      const pct =
+                        skills.length === 0
+                          ? 0
+                          : Math.round((skills.filter((s) => s.mastered).length / skills.length) * 100);
+                      return `${pct}%`;
+                    })()}
+                  </span>
                 </div>
-                <span className="inline-flex items-center px-3 py-1 text-xs font-semibold bg-gray-900 text-white rounded-full">
+
+                <div className="mt-4">
                   {(() => {
                     const skills = skillsBySwimmer[swimmer.id] || [];
+                    const mastered = skills.filter((s) => s.mastered).length;
                     const pct =
                       skills.length === 0
                         ? 0
-                        : Math.round((skills.filter((s) => s.mastered).length / skills.length) * 100);
-                    return `${pct}%`;
+                        : Math.round((mastered / skills.length) * 100);
+                    return (
+                      <>
+                        <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
+                          <span>Overall Progress ({mastered}/{skills.length} skills)</span>
+                          <span>{pct}%</span>
+                        </div>
+                        <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+                          <div className="h-full bg-gray-900" style={{ width: `${pct}%` }} />
+                        </div>
+                      </>
+                    );
                   })()}
-                </span>
-              </div>
+                </div>
 
-              <div className="mt-2">
-                <p className="text-xs text-gray-500">Next Session</p>
-                <p className="text-xs text-gray-700">{swimmer.nextSession}</p>
-              </div>
-
-              <div className="mt-4">
-                {(() => {
-                  const skills = skillsBySwimmer[swimmer.id] || [];
-                  const pct =
-                    skills.length === 0
-                      ? 0
-                      : Math.round((skills.filter((s) => s.mastered).length / skills.length) * 100);
-                  return (
-                    <>
-                      <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
-                        <span>
-                          Overall Progress ({skills.filter((s) => s.mastered).length}/{skills.length} skills)
-                        </span>
-                        <span>{pct}%</span>
+                <div className="mt-4">
+                  <p className="text-xs font-medium text-gray-500 mb-2">Skills</p>
+                  <div className="space-y-1">
+                    {(skillsBySwimmer[swimmer.id] || []).slice(0, 4).map((skill) => (
+                      <div key={skill.id} className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`h-4 w-4 rounded-full flex items-center justify-center text-xs ${skill.mastered ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'
+                              }`}
+                          >
+                            {skill.mastered ? '✓' : '○'}
+                          </span>
+                          <span className="text-xs text-gray-700">{skill.name}</span>
+                        </div>
+                        {skill.mastered && skill.dateAcquired && (
+                          <span className="text-xs text-gray-400">{skill.dateAcquired}</span>
+                        )}
                       </div>
-                      <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
-                        <div className="h-full bg-gray-900" style={{ width: `${pct}%` }} />
-                      </div>
-                    </>
-                  );
-                })()}
-              </div>
-
-              <div className="mt-4">
-                <p className="text-xs font-medium text-gray-500 mb-2">Skills</p>
-                <div className="space-y-1">
-                  {(skillsBySwimmer[swimmer.id] || []).map((skill) => (
-                    <div key={skill.id} className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`h-4 w-4 rounded-full flex items-center justify-center text-xs ${
-                            skill.mastered ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'
-                          }`}
-                        >
-                          {skill.mastered ? '✓' : '○'}
-                        </span>
-                        <span className="text-xs text-gray-700">{skill.name}</span>
-                      </div>
-                      {skill.mastered && skill.dateAcquired && (
-                        <span className="text-xs text-gray-400">{skill.dateAcquired}</span>
-                      )}
-                    </div>
-                  ))}
+                    ))}
+                    {(skillsBySwimmer[swimmer.id] || []).length > 4 && (
+                      <p className="text-xs text-gray-400 pt-1">+ {(skillsBySwimmer[swimmer.id] || []).length - 4} more...</p>
+                    )}
+                  </div>
                 </div>
               </div>
+            ))}
+          </div>
+
+          {!isLoading && !error && swimmers.length === 0 && (
+            <div className="mt-6 rounded-lg border border-gray-200 bg-white px-4 py-6 text-sm text-gray-600">
+              No linked swimmers found for this account yet.
             </div>
-          ))}
+          )}
         </section>
 
-        {!isLoading && !error && swimmers.length === 0 && (
-          <div className="mt-6 rounded-lg border border-gray-200 bg-white px-4 py-6 text-sm text-gray-600">
-            No linked swimmers found for this account yet.
-          </div>
-        )}
-
-        <section className="mt-8">
+        {/* Instructor Notes Section */}
+        <section className="space-y-4 sm:space-y-6 mt-6 sm:mt-8">
           <div className="flex items-center gap-3 mb-4">
             <span className="inline-flex items-center px-3 py-1 text-xs font-semibold bg-white border border-gray-200 rounded-full">
-              Instructor Notes
+              Recent Notes
             </span>
           </div>
 
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
-            <div className="px-6 py-4 border-b border-gray-100">
-              <h2 className="text-sm font-semibold text-gray-900">Recent Notes</h2>
-              <p className="text-xs text-gray-500">Focus on feedback and updates from instructors.</p>
+            <div className="px-5 sm:px-6 py-4 sm:py-5 border-b border-gray-100">
+              <h2 className="text-sm font-semibold text-gray-900">Instructor Notes</h2>
+              <p className="text-xs text-gray-500 mt-1">Feedback and updates from your instructors.</p>
             </div>
             <div className="divide-y divide-gray-100">
-              {notes.map((note) => (
-                <div key={note.id} className="px-6 py-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="h-7 w-7 rounded-full bg-gray-100 flex items-center justify-center text-xs font-semibold text-gray-700">
-                        {getInitials(note.swimmerName)}
-                      </span>
-                      <p className="text-sm font-semibold text-gray-900">{note.swimmerName}</p>
+              {notes.length > 0 ? (
+                notes.map((note) => (
+                  <div key={note.id} className="px-5 sm:px-6 py-4 sm:py-5">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="h-8 w-8 rounded-full bg-gray-800 flex items-center justify-center text-xs font-semibold text-white flex-shrink-0">
+                          {getInitials(note.swimmerName)}
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-gray-900">{note.swimmerName}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">{note.date}</p>
+                        </div>
+                      </div>
                     </div>
-                    <span className="text-xs text-gray-400">{note.date}</span>
+                    <p className="text-sm text-gray-600 mt-3">{note.note}</p>
                   </div>
-                  <p className="text-sm text-gray-600 mt-2">{note.note}</p>
+                ))
+              ) : (
+                <div className="px-5 sm:px-6 py-8 sm:py-10 text-center">
+                  <p className="text-sm text-gray-500">No notes yet. Check back soon for instructor feedback.</p>
                 </div>
-              ))}
+              )}
             </div>
           </div>
         </section>

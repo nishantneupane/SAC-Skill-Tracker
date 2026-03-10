@@ -81,11 +81,29 @@ async function instructorCanAccessMember(
     };
   }
 
-  const canAccess = (memberEnrollments ?? []).some((row) =>
+  const canAccessViaClass = (memberEnrollments ?? []).some((row) =>
     taughtClassIds.has(row.class_id)
   );
 
-  return canAccess ? { ok: true } : { ok: false, error: 'You do not have access to this swimmer.' };
+  const { data: directAssignment, error: directAssignmentError } = await supabaseAdmin
+    .from('instructor_member_assignment')
+    .select('member_id')
+    .eq('instructor_person_id', instructorPersonId)
+    .eq('member_id', memberId)
+    .maybeSingle();
+
+  if (directAssignmentError) {
+    return {
+      ok: false,
+      error: `Failed to load direct instructor assignments: ${directAssignmentError.message}`,
+    };
+  }
+
+  const canAccessViaDirectAssignment = Boolean(directAssignment);
+
+  return canAccessViaClass || canAccessViaDirectAssignment
+    ? { ok: true }
+    : { ok: false, error: 'You do not have access to this swimmer.' };
 }
 
 async function getSharedClassIdsForInstructorAndMember(
@@ -163,10 +181,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Swimmer not found.' }, { status: 404 });
     }
 
-    const { data: classRows, error: classRowsError } = await supabaseAdmin
-      .from('class_entity')
-      .select('class_id, name, schedule')
-      .in('class_id', sharedClassIds);
+    const { data: classRows, error: classRowsError } = sharedClassIds.length
+      ? await supabaseAdmin
+          .from('class_entity')
+          .select('class_id, name, schedule')
+          .in('class_id', sharedClassIds)
+      : { data: [], error: null };
 
     if (classRowsError) {
       return NextResponse.json(
@@ -452,7 +472,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     if (!classId) {
       return NextResponse.json(
-        { error: 'Cannot create note because swimmer is not enrolled in a class.' },
+        {
+          error:
+            'Cannot save class evaluation for a direct-only assignment without a shared class. Assign a shared class first.',
+        },
         { status: 400 }
       );
     }

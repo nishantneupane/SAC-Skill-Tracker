@@ -78,6 +78,23 @@ export async function GET(request: NextRequest) {
 
     const personDisplayName = `${person.first_name ?? ''} ${person.last_name ?? ''}`.trim();
 
+    // Fetch parent's organization
+    const { data: personOrg, error: personOrgError } = await supabaseAdmin
+      .from('person_organization')
+      .select('organization_id')
+      .eq('person_id', person.person_id)
+      .maybeSingle();
+
+    let organizationName = 'SAC Skill Tracker';
+    if (!personOrgError && personOrg) {
+      const { data: org } = await supabaseAdmin
+        .from('organization')
+        .select('name')
+        .eq('organization_id', personOrg.organization_id)
+        .maybeSingle();
+      if (org?.name) organizationName = org.name;
+    }
+
     // 2) Fetch linked swimmers for this guardian.
     const { data: guardianLinks, error: guardianLinksError } = await supabaseAdmin
       .from('guardian_member')
@@ -96,6 +113,7 @@ export async function GET(request: NextRequest) {
     if (memberIds.length === 0) {
       return NextResponse.json({
         userName: personDisplayName || person.email,
+        organizationName,
         swimmers: [],
         skillsBySwimmer: {},
         notes: [],
@@ -261,6 +279,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       userName: personDisplayName || person.email,
+      organizationName,
       swimmers,
       skillsBySwimmer,
       notes,
