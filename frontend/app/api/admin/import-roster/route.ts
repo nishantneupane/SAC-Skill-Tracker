@@ -177,7 +177,6 @@ export async function POST(request: NextRequest) {
       */
 
       if (memberId && personId && roleId === SUPABASE_ROLE.MEMBER) {
-        console.log("inside");
         await supabase.from("guardian_member").upsert({
           guardian_person_id: personId,
           member_id: memberId,

@@ -35,7 +35,6 @@ export async function GET(request: NextRequest) {
 
     // Step 1: Resolve organization from requesting admin email
     const organizationId = await getOrgIdByEmail(supabase, email);
-    console.log("organization Id", organizationId);
     if (!organizationId) {
       return NextResponse.json(
         { error: "Failed to find organization for user" },
