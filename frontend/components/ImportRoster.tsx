@@ -1,9 +1,29 @@
 import { useState } from "react";
 import Papa from "papaparse";
 
-export default function ImportRoster() {
+export default function ImportRoster({
+  organizationId,
+}: {
+  organizationId?: string;
+}) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [importedMemberCount, setImportedMemberCount] = useState<number>(0);
+  const [importedInstructorCount, setImportedInstructorCount] =
+    useState<number>(0);
+  const [importedAdminCount, setImportedAdminCount] = useState<number>(0);
+  const [errors, setErrors] = useState<string[]>([]);
+
+  const allowedBillingGroups = [
+    "Group 1",
+    "Group 2",
+    "High School - Non Competitive",
+    "High School",
+    "Coaches",
+    "Board Members",
+    "Annual",
+  ];
 
   const requiredHeaders = [
     "Memb. First Name",
@@ -13,6 +33,7 @@ export default function ImportRoster() {
     "Email",
     "Gender",
     "Birthday",
+    "Billing Group",
   ];
 
   const handleFile = (file: File) => {
@@ -32,7 +53,7 @@ export default function ImportRoster() {
         );
 
         if (missingHeaders.length > 0) {
-          alert(`Missing columns: ${missingHeaders.join(", ")}`);
+          setErrors([`Missing columns: ${missingHeaders.join(", ")}`]);
           return;
         }
 
@@ -44,47 +65,57 @@ export default function ImportRoster() {
           email: row["Email"]?.toLowerCase().trim(),
           gender: row["Gender"],
           birthday: row["Birthday"],
+          billing_group: row["Billing Group"]?.trim(),
         }));
 
-        const errors: string[] = [];
+        const validationErrors: string[] = [];
 
         rows.forEach((row, index) => {
           const rowNumber = index + 2;
-
           if (!row.first_name)
-            errors.push(`Row ${rowNumber}: Missing member first name`);
-
+            validationErrors.push(
+              `Row ${rowNumber}: Missing member first name`,
+            );
           if (!row.last_name)
-            errors.push(`Row ${rowNumber}: Missing member last name`);
-
+            validationErrors.push(`Row ${rowNumber}: Missing member last name`);
           if (!row.acc_first_name)
-            errors.push(`Row ${rowNumber}: Missing account first name`);
-
+            validationErrors.push(
+              `Row ${rowNumber}: Missing account first name`,
+            );
           if (!row.acc_last_name)
-            errors.push(`Row ${rowNumber}: Missing account last name`);
+            validationErrors.push(
+              `Row ${rowNumber}: Missing account last name`,
+            );
+          if (!row.email)
+            validationErrors.push(`Row ${rowNumber}: Missing email`);
 
-          if (!row.email) errors.push(`Row ${rowNumber}: Missing email`);
-
-          // Email format check
           if (row.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.email))
-            errors.push(`Row ${rowNumber}: Invalid email format`);
+            validationErrors.push(`Row ${rowNumber}: Invalid email format`);
 
-          // Gender validation (optional but restricted)
           const allowedGenders = ["Male", "Female", "M", "F"];
           if (row.gender && !allowedGenders.includes(row.gender))
-            errors.push(`Row ${rowNumber}: Invalid gender value`);
+            validationErrors.push(`Row ${rowNumber}: Invalid gender value`);
 
-          // Birthday validation (basic date check)
           if (row.birthday && isNaN(Date.parse(row.birthday)))
-            errors.push(`Row ${rowNumber}: Invalid birthday format`);
+            validationErrors.push(`Row ${rowNumber}: Invalid birthday format`);
+          if (!row.billing_group)
+            validationErrors.push(`Row ${rowNumber}: Missing Billing Group`);
+          else if (!allowedBillingGroups.includes(row.billing_group))
+            validationErrors.push(
+              `Row ${rowNumber}: Invalid Billing Group (${row.billing_group})`,
+            );
         });
-        if (errors.length > 0) {
-          alert(errors.slice(0, 5).join("\n")); // show first 5 errors
+
+        if (validationErrors.length > 0) {
+          setErrors(validationErrors.slice(0, 10)); // show first 10
           return;
         }
 
-        console.log("CSV is valid. Ready to send.");
+        setErrors([]);
         setSelectedFile(file);
+        setImportedMemberCount(0);
+        setImportedAdminCount(0);
+        setImportedInstructorCount(0);
       },
     });
   };
@@ -98,17 +129,36 @@ export default function ImportRoster() {
   };
 
   const handleUpload = async () => {
-    if (!selectedFile) return;
+    if (!selectedFile || !organizationId) return;
 
-    const formData = new FormData();
-    formData.append("file", selectedFile);
+    setIsLoading(true);
 
-    // await fetch("/api/import-roster", {
-    //   method: "POST",
-    //   body: formData,
-    // });
+    try {
+      const formData = new FormData();
+      formData.append("file", selectedFile);
+      formData.append("organization_id", organizationId);
 
-    setSelectedFile(null);
+      const res = await fetch("/api/admin/import-roster", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        setImportedMemberCount(data.importedMembers);
+        setImportedAdminCount(data.importedAdmins);
+        setImportedInstructorCount(data.importedInstructors);
+
+        setSelectedFile(null); // reset file after success
+      } else {
+        setErrors([data.error || "Import failed"]);
+      }
+    } catch (err: any) {
+      setErrors([err.message || "Unexpected error"]);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -124,20 +174,6 @@ export default function ImportRoster() {
           isDragging ? "border-black bg-gray-50" : "border-gray-200"
         }`}
       >
-        <svg
-          className="w-10 h-10 sm:w-12 sm:h-12 text-gray-300 mb-2 sm:mb-3"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <ellipse cx="12" cy="12" rx="9" ry="4" strokeWidth={1.5} />
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={1.5}
-            d="M3 12c0 2.21 4.03 4 9 4s9-1.79 9-4M3 16c0 2.21 4.03 4 9 4s9-1.79 9-4"
-          />
-        </svg>
         <p className="text-sm sm:text-base font-semibold text-gray-900 mb-1">
           Import Roster Data
         </p>
@@ -146,13 +182,12 @@ export default function ImportRoster() {
           Import swimmer roster, levels, and class assignments from SportsEngine
         </p>
 
-        {/* Hidden file input */}
         <input
           type="file"
           accept=".csv"
           className="hidden"
           id="csvUpload"
-          onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+          onChange={(e) => {
             const file = e.target.files?.[0];
             if (file) handleFile(file);
           }}
@@ -161,34 +196,23 @@ export default function ImportRoster() {
         <div className="flex gap-3">
           <label
             htmlFor="csvUpload"
-            className="cursor-pointer flex items-center gap-2 border border-gray-300 text-gray-700 text-sm font-medium px-4 py-2 rounded-lg hover:bg-gray-50 transition"
+            className={`cursor-pointer flex items-center gap-2 border text-gray-700 text-sm font-medium px-4 py-2 rounded-lg transition
+      ${!isLoading ? "border-gray-300 hover:bg-gray-50" : "border-gray-200 bg-gray-200 text-gray-400 cursor-not-allowed pointer-events-none"}
+    `}
           >
-            <svg
-              className="w-3.5 h-3.5 sm:w-4 sm:h-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
-              />
-            </svg>
             Upload CSV
           </label>
 
           <button
             onClick={handleUpload}
-            disabled={!selectedFile}
+            disabled={!selectedFile || isLoading}
             className={`text-sm font-medium px-4 py-2 rounded-lg transition ${
-              selectedFile
+              selectedFile && !isLoading
                 ? "bg-black text-white hover:opacity-90"
                 : "bg-gray-200 text-gray-400 cursor-not-allowed"
             }`}
           >
-            Import
+            {isLoading ? "Importing..." : "Import"}
           </button>
         </div>
 
@@ -197,17 +221,30 @@ export default function ImportRoster() {
             Selected: {selectedFile.name}
           </p>
         )}
-      </div>
-      <div>
-        <p className="text-xs sm:text-sm font-semibold text-gray-900 mb-2">
-          Supported Import Options:
-        </p>
-        <ul className="text-xs sm:text-sm text-gray-500 space-y-1">
-          <li>• Bulk roster updates from SportsEngine API</li>
-          <li>• CSV file upload for manual imports</li>
-          <li>• Level and class assignment synchronization</li>
-          <li>• Parent contact information updates</li>
-        </ul>
+
+        {(importedMemberCount > 0 ||
+          importedInstructorCount > 0 ||
+          importedAdminCount > 0) && (
+          <div>
+            <p className="mt-2 text-sm text-green-600">
+              Successfully imported {importedMemberCount} swimmers.
+            </p>
+            <p className="mt-2 text-sm text-green-600">
+              Successfully imported {importedInstructorCount} instructors.
+            </p>
+            <p className="mt-2 text-sm text-green-600">
+              Successfully imported {importedAdminCount} admins.
+            </p>
+          </div>
+        )}
+
+        {errors.length > 0 && (
+          <div className="mt-2 text-sm text-red-600 space-y-1">
+            {errors.map((err, i) => (
+              <p key={i}>{err}</p>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

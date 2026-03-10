@@ -489,6 +489,7 @@ export default function AdminDashboard() {
   // Fetch dashboard statistics
   const fetchStats = async () => {
     if (!userEmail) return;
+
     try {
       const response = await fetch(
         `/api/admin/dashboard?email=${encodeURIComponent(userEmail)}`,
@@ -962,7 +963,7 @@ export default function AdminDashboard() {
               </h2>
             </div>
 
-            <ImportRoster />
+            <ImportRoster organizationId={stats?.organizationId} />
           </div>
         )}
 
