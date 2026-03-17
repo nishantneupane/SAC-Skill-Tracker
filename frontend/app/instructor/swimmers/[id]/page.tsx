@@ -40,18 +40,11 @@ interface Note {
   author: string;
 }
 
-interface AttendanceRecord {
-  date: string;
-  status: 'present' | 'absent' | 'late' | 'excused';
-  className: string;
-}
-
 interface SwimmerPayload {
   swimmer: SwimmerDetail;
   classes: ClassInfo[];
   skills: Skill[];
   notes: Note[];
-  attendanceHistory: AttendanceRecord[];
   error?: string;
 }
 
@@ -64,34 +57,18 @@ function getInitials(name: string) {
     .toUpperCase();
 }
 
-function getStatusBadge(status: AttendanceRecord['status']) {
-  switch (status) {
-    case 'present':
-      return 'bg-green-100 text-green-700';
-    case 'absent':
-      return 'bg-red-100 text-red-700';
-    case 'late':
-      return 'bg-yellow-100 text-yellow-700';
-    case 'excused':
-      return 'bg-blue-100 text-blue-700';
-    default:
-      return 'bg-gray-100 text-gray-700';
-  }
-}
-
 export default function InstructorSwimmerDetail() {
   const router = useRouter();
   const params = useParams();
   const swimmerId = params.id as string;
 
-  const [activeTab, setActiveTab] = useState<'skills' | 'notes' | 'attendance'>('skills');
+  const [activeTab, setActiveTab] = useState<'skills' | 'notes'>('skills');
   const [newNote, setNewNote] = useState('');
 
   const [swimmer, setSwimmer] = useState<SwimmerDetail | null>(null);
   const [classes, setClasses] = useState<ClassInfo[]>([]);
   const [skills, setSkills] = useState<Skill[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
-  const [attendanceHistory, setAttendanceHistory] = useState<AttendanceRecord[]>([]);
   const [selectedClassId, setSelectedClassId] = useState('');
 
   const [isLoading, setIsLoading] = useState(true);
@@ -130,7 +107,6 @@ export default function InstructorSwimmerDetail() {
       setClasses(payload.classes ?? []);
       setSkills(payload.skills ?? []);
       setNotes(payload.notes ?? []);
-      setAttendanceHistory(payload.attendanceHistory ?? []);
       setSelectedClassId((payload.classes ?? [])[0]?.id ?? '');
     } catch (fetchError) {
       const message = fetchError instanceof Error ? fetchError.message : 'Unexpected error';
@@ -139,7 +115,6 @@ export default function InstructorSwimmerDetail() {
       setClasses([]);
       setSkills([]);
       setNotes([]);
-      setAttendanceHistory([]);
       setSelectedClassId('');
     } finally {
       setIsLoading(false);
@@ -352,7 +327,7 @@ export default function InstructorSwimmerDetail() {
         </section>
 
         <div className="flex gap-2 border-b border-gray-200">
-          {(['skills', 'notes', 'attendance'] as const).map((tab) => (
+          {(['skills', 'notes'] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -469,32 +444,6 @@ export default function InstructorSwimmerDetail() {
                     <p className="text-sm text-gray-600">{note.content}</p>
                   </div>
                 ))
-              )}
-            </div>
-          </section>
-        )}
-
-        {activeTab === 'attendance' && (
-          <section className="bg-white rounded-xl border border-gray-200">
-            <div className="px-6 py-4 border-b border-gray-100">
-              <h3 className="text-sm font-semibold text-gray-900">Attendance History</h3>
-              <p className="text-xs text-gray-500">Derived from saved evaluations</p>
-            </div>
-            <div className="divide-y divide-gray-100">
-              {attendanceHistory.map((record, index) => (
-                <div key={`${record.date}-${index}`} className="px-6 py-3 flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-900">{record.date}</p>
-                    <p className="text-xs text-gray-500">{record.className}</p>
-                  </div>
-                  <span className={`px-3 py-1 text-xs font-medium rounded-full ${getStatusBadge(record.status)}`}>
-                    {record.status.charAt(0).toUpperCase() + record.status.slice(1)}
-                  </span>
-                </div>
-              ))}
-
-              {attendanceHistory.length === 0 && (
-                <div className="px-6 py-6 text-sm text-gray-500">No attendance/evaluation records yet.</div>
               )}
             </div>
           </section>

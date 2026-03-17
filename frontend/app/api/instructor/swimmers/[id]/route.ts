@@ -166,7 +166,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const { data: member, error: memberError } = await supabaseAdmin
       .from('member')
-      .select('member_id, first_name, last_name, level, date_of_birth, created_at')
+      .select('member_id, organization_id, first_name, last_name, level, date_of_birth, created_at')
       .eq('member_id', memberId)
       .maybeSingle();
 
@@ -207,26 +207,28 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    const skillIds = Array.from(new Set((skills ?? []).map((row) => row.skill_id)));
-    const skillNameById = new Map<string, string>();
+    const { data: orgSkills, error: orgSkillsError } = await supabaseAdmin
+      .from('skill')
+      .select('skill_id, name')
+      .eq('organization_id', member.organization_id)
+      .order('name', { ascending: true });
 
-    if (skillIds.length > 0) {
-      const { data: skillRows, error: skillRowsError } = await supabaseAdmin
-        .from('skill')
-        .select('skill_id, name')
-        .in('skill_id', skillIds);
-
-      if (skillRowsError) {
-        return NextResponse.json(
-          { error: `Failed to load skill names: ${skillRowsError.message}` },
-          { status: 500 }
-        );
-      }
-
-      (skillRows ?? []).forEach((row) => {
-        skillNameById.set(row.skill_id, row.name);
-      });
+    if (orgSkillsError) {
+      return NextResponse.json(
+        { error: `Failed to load organization skills: ${orgSkillsError.message}` },
+        { status: 500 }
+      );
     }
+
+    const memberSkillById = new Map(
+      (skills ?? []).map((row) => [
+        row.skill_id,
+        {
+          progress: row.progress ?? 0,
+          dateAcquired: row.date_acquired,
+        },
+      ])
+    );
 
     const { data: evaluations, error: evaluationsError } = await supabaseAdmin
       .from('evaluation')
@@ -310,15 +312,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       });
     }
 
-    const classNameById = new Map<string, string>();
-    (classRows ?? []).forEach((row) => classNameById.set(row.class_id, row.name));
-
-    const attendanceHistory = (evaluations ?? []).map((row) => ({
-      date: formatDate(row.evaluation_date) ?? '',
-      status: 'present' as const,
-      className: classNameById.get(row.class_id) ?? 'Class',
-    }));
-
     const firstGuardianLink = guardianLinks?.[0];
     const firstGuardian = firstGuardianLink
       ? guardianById.get(firstGuardianLink.guardian_person_id)
@@ -340,14 +333,17 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         name: row.name,
         schedule: row.schedule ?? 'Schedule TBD',
       })),
-      skills: (skills ?? [])
-        .map((row) => ({
-          id: row.skill_id,
-          name: skillNameById.get(row.skill_id) ?? 'Unknown skill',
-          mastered: Boolean(row.date_acquired),
-          progress: row.progress ?? 0,
-          dateAcquired: formatDate(row.date_acquired),
-        }))
+      skills: (orgSkills ?? [])
+        .map((row) => {
+          const memberSkill = memberSkillById.get(row.skill_id);
+          return {
+            id: row.skill_id,
+            name: row.name,
+            mastered: Boolean(memberSkill?.dateAcquired),
+            progress: memberSkill?.progress ?? 0,
+            dateAcquired: formatDate(memberSkill?.dateAcquired),
+          };
+        })
         .sort((a, b) => {
           if (a.mastered !== b.mastered) return a.mastered ? -1 : 1;
           return a.name.localeCompare(b.name);
@@ -358,7 +354,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         content: row.feedback ?? '',
         author: authorNameById.get(row.instructor_person_id) ?? 'Instructor',
       })),
-      attendanceHistory: attendanceHistory.slice(0, 12),
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown server error';
