@@ -64,6 +64,8 @@ export default function InstructorSwimmerDetail() {
 
   const [activeTab, setActiveTab] = useState<'skills' | 'notes'>('skills');
   const [newNote, setNewNote] = useState('');
+  const [skillNotes, setSkillNotes] = useState<Record<string, string>>({});
+  const [savedSkillMastery, setSavedSkillMastery] = useState<Record<string, boolean>>({});
 
   const [swimmer, setSwimmer] = useState<SwimmerDetail | null>(null);
   const [classes, setClasses] = useState<ClassInfo[]>([]);
@@ -75,7 +77,7 @@ export default function InstructorSwimmerDetail() {
   const [error, setError] = useState('');
   const [saveError, setSaveError] = useState('');
   const [isSavingNote, setIsSavingNote] = useState(false);
-  const [updatingSkillId, setUpdatingSkillId] = useState<string | null>(null);
+  const [savingSkillId, setSavingSkillId] = useState<string | null>(null);
 
   const loadSwimmerData = async () => {
     try {
@@ -106,6 +108,9 @@ export default function InstructorSwimmerDetail() {
       setSwimmer(payload.swimmer ?? null);
       setClasses(payload.classes ?? []);
       setSkills(payload.skills ?? []);
+      setSavedSkillMastery(
+        Object.fromEntries((payload.skills ?? []).map((skill) => [skill.id, skill.mastered]))
+      );
       setNotes(payload.notes ?? []);
       setSelectedClassId((payload.classes ?? [])[0]?.id ?? '');
     } catch (fetchError) {
@@ -136,68 +141,27 @@ export default function InstructorSwimmerDetail() {
     [masteredCount, skills.length]
   );
 
-  const toggleSkill = async (skill: Skill) => {
-    try {
-      setSaveError('');
-      setUpdatingSkillId(skill.id);
+  const toggleSkill = (skill: Skill) => {
+    setSaveError('');
 
-      const stored = localStorage.getItem('user');
-      if (!stored) {
-        throw new Error('Missing local user session. Please log in again.');
-      }
-
-      const userData = JSON.parse(stored);
-      const email = userData.email;
-
-      if (!email) {
-        throw new Error('Missing user email from login session.');
-      }
-
-      const nextMastered = !skill.mastered;
-
-      setSkills((prev) =>
-        prev.map((item) =>
-          item.id === skill.id
-            ? {
-                ...item,
-                mastered: nextMastered,
-                progress: nextMastered ? 100 : 0,
-                dateAcquired: nextMastered
-                  ? new Date().toLocaleDateString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                      year: 'numeric',
-                    })
-                  : undefined,
-              }
-            : item
-        )
-      );
-
-      const response = await fetch(`/api/instructor/swimmers/${swimmerId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email,
-          skillId: skill.id,
-          mastered: nextMastered,
-        }),
-      });
-
-      const payload = (await response.json()) as { error?: string };
-
-      if (!response.ok) {
-        throw new Error(payload.error || 'Failed to update skill.');
-      }
-
-      await loadSwimmerData();
-    } catch (patchError) {
-      const message = patchError instanceof Error ? patchError.message : 'Failed to update skill';
-      setSaveError(message);
-      await loadSwimmerData();
-    } finally {
-      setUpdatingSkillId(null);
-    }
+    setSkills((prev) =>
+      prev.map((item) =>
+        item.id === skill.id
+          ? {
+              ...item,
+              mastered: !item.mastered,
+              progress: !item.mastered ? 100 : 0,
+              dateAcquired: !item.mastered
+                ? new Date().toLocaleDateString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric',
+                  })
+                : undefined,
+            }
+          : item
+      )
+    );
   };
 
   const handleAddNote = async () => {
@@ -242,6 +206,57 @@ export default function InstructorSwimmerDetail() {
       setSaveError(message);
     } finally {
       setIsSavingNote(false);
+    }
+  };
+
+  const handleSubmitSkill = async (skill: Skill) => {
+    try {
+      const note = skillNotes[skill.id]?.trim() ?? '';
+      const masteryChanged = savedSkillMastery[skill.id] !== skill.mastered;
+
+      if (!note && !masteryChanged) return;
+
+      setSaveError('');
+      setSavingSkillId(skill.id);
+
+      const stored = localStorage.getItem('user');
+      if (!stored) {
+        throw new Error('Missing local user session. Please log in again.');
+      }
+
+      const userData = JSON.parse(stored);
+      const email = userData.email;
+
+      if (!email) {
+        throw new Error('Missing user email from login session.');
+      }
+
+      const response = await fetch(`/api/instructor/swimmers/${swimmerId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email,
+          note: note ? `Skill: ${skill.name}\nNote: ${note}` : undefined,
+          classId: selectedClassId || undefined,
+          skillId: masteryChanged ? skill.id : undefined,
+          mastered: masteryChanged ? skill.mastered : undefined,
+        }),
+      });
+
+      const payload = (await response.json()) as { error?: string };
+
+      if (!response.ok) {
+        throw new Error(payload.error || 'Failed to save skill update.');
+      }
+
+      setSkillNotes((prev) => ({ ...prev, [skill.id]: '' }));
+      await loadSwimmerData();
+    } catch (submitError) {
+      const message = submitError instanceof Error ? submitError.message : 'Failed to save skill update';
+      setSaveError(message);
+      await loadSwimmerData();
+    } finally {
+      setSavingSkillId(null);
     }
   };
 
@@ -345,11 +360,26 @@ export default function InstructorSwimmerDetail() {
         {activeTab === 'skills' && (
           <section className="space-y-6">
             <div className="bg-white rounded-xl border border-gray-200 p-6">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium text-gray-900">{swimmer?.level} Progress</span>
-                <span className="text-sm text-gray-500">
-                  {masteredCount} of {skills.length} skills
-                </span>
+              <div className="flex items-center justify-between gap-4 mb-2">
+                <div>
+                  <span className="text-sm font-medium text-gray-900">{swimmer?.level} Progress</span>
+                  <p className="text-sm text-gray-500">
+                    {masteredCount} of {skills.length} skills
+                  </p>
+                </div>
+                {classes.length > 0 && (
+                  <select
+                    value={selectedClassId}
+                    onChange={(e) => setSelectedClassId(e.target.value)}
+                    className="rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                  >
+                    {classes.map((classItem) => (
+                      <option key={classItem.id} value={classItem.id}>
+                        {classItem.name} ({classItem.schedule})
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
               <div className="w-full h-3 bg-gray-100 rounded-full overflow-hidden">
                 <div className="h-full bg-gray-900 transition-all" style={{ width: `${progressPct}%` }} />
@@ -358,33 +388,57 @@ export default function InstructorSwimmerDetail() {
 
             <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
               {skills.map((skill) => (
-                <div key={skill.id} className="px-6 py-4 flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={() => toggleSkill(skill)}
-                      disabled={updatingSkillId === skill.id}
-                      className={`h-7 w-7 rounded-full flex items-center justify-center text-sm transition ${
-                        skill.mastered
-                          ? 'bg-green-100 text-green-600'
-                          : 'bg-gray-100 text-gray-400 hover:bg-gray-200'
-                      }`}
-                    >
-                      {skill.mastered ? '✓' : '○'}
-                    </button>
-                    <div>
-                      <p className={`text-sm ${skill.mastered ? 'text-gray-900' : 'text-gray-600'}`}>
-                        {skill.name}
-                      </p>
-                      <p className="text-xs text-gray-400">Progress: {skill.progress}%</p>
+                <div key={skill.id} className="px-6 py-4 space-y-3">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => toggleSkill(skill)}
+                        className={`h-7 w-7 rounded-full flex items-center justify-center text-sm transition ${
+                          skill.mastered
+                            ? 'bg-green-100 text-green-600'
+                            : 'bg-gray-100 text-gray-400 hover:bg-gray-200'
+                        }`}
+                      >
+                        {skill.mastered ? '✓' : '○'}
+                      </button>
+                      <div>
+                        <p className={`text-sm ${skill.mastered ? 'text-gray-900' : 'text-gray-600'}`}>
+                          {skill.name}
+                        </p>
+                        <p className="text-xs text-gray-400">Progress: {skill.progress}%</p>
+                      </div>
+                    </div>
+
+                    <div className="text-right">
+                      {skill.mastered && skill.dateAcquired ? (
+                        <span className="text-xs text-gray-400">{skill.dateAcquired}</span>
+                      ) : (
+                        <span className="text-xs text-gray-400">Not yet acquired</span>
+                      )}
                     </div>
                   </div>
 
-                  <div className="text-right">
-                    {skill.mastered && skill.dateAcquired ? (
-                      <span className="text-xs text-gray-400">{skill.dateAcquired}</span>
-                    ) : (
-                      <span className="text-xs text-gray-400">Not yet acquired</span>
-                    )}
+                  <div className="flex flex-col gap-3 md:flex-row">
+                    <input
+                      type="text"
+                      value={skillNotes[skill.id] ?? ''}
+                      onChange={(e) =>
+                        setSkillNotes((prev) => ({ ...prev, [skill.id]: e.target.value }))
+                      }
+                      placeholder="Add skill note..."
+                      className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-200"
+                    />
+                    <button
+                      onClick={() => handleSubmitSkill(skill)}
+                      disabled={
+                        savingSkillId === skill.id ||
+                        (!skillNotes[skill.id]?.trim() &&
+                          savedSkillMastery[skill.id] === skill.mastered)
+                      }
+                      className="px-4 py-2 text-sm font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:bg-gray-300 disabled:cursor-not-allowed transition"
+                    >
+                      {savingSkillId === skill.id ? 'Saving...' : 'Submit'}
+                    </button>
                   </div>
                 </div>
               ))}

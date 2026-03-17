@@ -427,6 +427,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       email?: string;
       note?: string;
       classId?: string;
+      skillId?: string;
+      mastered?: boolean;
     };
 
     const instructorResolution = await resolveInstructorPersonId(body.email);
@@ -435,8 +437,15 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
     const instructor = instructorResolution.person;
 
-    if (!body.note?.trim()) {
-      return NextResponse.json({ error: 'Note content is required.' }, { status: 400 });
+    const trimmedNote = body.note?.trim() ?? '';
+    const hasSkillUpdate = Boolean(body.skillId) && typeof body.mastered === 'boolean';
+    const hasNote = Boolean(trimmedNote);
+
+    if (!hasSkillUpdate && !hasNote) {
+      return NextResponse.json(
+        { error: 'Note content or skill update is required.' },
+        { status: 400 }
+      );
     }
 
     const accessCheck = await instructorCanAccessMember(instructor.person_id, memberId);
@@ -475,6 +484,30 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
+    if (hasSkillUpdate) {
+      const { error: skillUpsertError } = await supabaseAdmin.from('member_skill').upsert(
+        {
+          member_id: memberId,
+          skill_id: body.skillId,
+          progress: body.mastered ? 100 : 0,
+          date_acquired: body.mastered ? new Date().toISOString().slice(0, 10) : null,
+          updated_by_person_id: instructor.person_id,
+        },
+        { onConflict: 'member_id,skill_id' }
+      );
+
+      if (skillUpsertError) {
+        return NextResponse.json(
+          { error: `Failed to update skill: ${skillUpsertError.message}` },
+          { status: 500 }
+        );
+      }
+    }
+
+    if (!hasNote) {
+      return NextResponse.json({ success: true });
+    }
+
     const evaluationDate = new Date().toISOString().slice(0, 10);
 
     const { error: upsertError } = await supabaseAdmin.from('evaluation').upsert(
@@ -482,7 +515,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         instructor_person_id: instructor.person_id,
         member_id: memberId,
         class_id: classId,
-        feedback: body.note.trim(),
+        feedback: trimmedNote,
         evaluation_date: evaluationDate,
       },
       { onConflict: 'instructor_person_id,member_id,class_id,evaluation_date' }
