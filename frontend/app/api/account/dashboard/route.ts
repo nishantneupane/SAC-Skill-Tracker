@@ -19,6 +19,7 @@ interface DashboardSwimmer {
   name: string;
   level: string;
   nextSession: string;
+  classIds: string[];
 }
 
 interface DashboardNote {
@@ -227,7 +228,14 @@ export async function GET(request: NextRequest) {
     });
 
     const nextSessionByMemberId = new Map<string, string>();
+    const classIdsByMemberId = new Map<string, string[]>();
     (enrollments ?? []).forEach((enrollment) => {
+      const classIdsForMember = classIdsByMemberId.get(enrollment.member_id) ?? [];
+      if (!classIdsForMember.includes(enrollment.class_id)) {
+        classIdsForMember.push(enrollment.class_id);
+      }
+      classIdsByMemberId.set(enrollment.member_id, classIdsForMember);
+
       // Keep the first class found as a lightweight "next session" placeholder.
       if (nextSessionByMemberId.has(enrollment.member_id)) return;
       const classInfo = classById.get(enrollment.class_id);
@@ -245,6 +253,7 @@ export async function GET(request: NextRequest) {
       name: `${member.first_name} ${member.last_name}`.trim(),
       level: member.level ?? 'Unassigned level',
       nextSession: nextSessionByMemberId.get(member.member_id) ?? 'No upcoming session',
+      classIds: classIdsByMemberId.get(member.member_id) ?? [],
     }));
 
     const skillsBySwimmer: Record<string, DashboardSkillItem[]> = {};

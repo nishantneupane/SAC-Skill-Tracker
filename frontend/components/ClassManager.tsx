@@ -25,6 +25,15 @@ export default function ClassManager({ userEmail, onRefresh }: ClassManagerProps
     const [loading, setLoading] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [classes, setClasses] = useState<Class[]>([]);
+    const [selectedCsvFile, setSelectedCsvFile] = useState<File | null>(null);
+    const [csvUploading, setCsvUploading] = useState(false);
+    const [csvErrors, setCsvErrors] = useState<string[]>([]);
+    const [csvSummary, setCsvSummary] = useState<{
+        insertedClasses: number;
+        updatedClasses: number;
+        totalProcessed: number;
+        skippedRows: number;
+    } | null>(null);
 
     // New class form state
     const [newName, setNewName] = useState('');
@@ -73,6 +82,74 @@ export default function ClassManager({ userEmail, onRefresh }: ClassManagerProps
     const showError = (message: string) => {
         setErrorMessage(message);
         setTimeout(() => setErrorMessage(null), 5000);
+    };
+
+    const handleCsvFileSelect = (file: File | null) => {
+        if (!file) return;
+
+        const isCsvType =
+            file.type === 'text/csv' ||
+            file.type === 'application/vnd.ms-excel' ||
+            file.name.toLowerCase().endsWith('.csv');
+
+        if (!isCsvType) {
+            setCsvErrors(['Please select a CSV file.']);
+            setSelectedCsvFile(null);
+            return;
+        }
+
+        setSelectedCsvFile(file);
+        setCsvErrors([]);
+        setCsvSummary(null);
+    };
+
+    const handleUploadCsv = async () => {
+        if (!selectedCsvFile || !userEmail || csvUploading) return;
+
+        setCsvUploading(true);
+        setCsvErrors([]);
+
+        try {
+            const formData = new FormData();
+            formData.append('file', selectedCsvFile);
+            formData.append('email', userEmail);
+
+            const response = await fetch('/api/admin/import-classes', {
+                method: 'POST',
+                body: formData,
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                if (Array.isArray(data.errors) && data.errors.length > 0) {
+                    setCsvErrors(data.errors);
+                } else {
+                    setCsvErrors([data.error || 'Failed to import classes CSV']);
+                }
+                return;
+            }
+
+            setCsvSummary({
+                insertedClasses: data.insertedClasses ?? 0,
+                updatedClasses: data.updatedClasses ?? 0,
+                totalProcessed: data.totalProcessed ?? 0,
+                skippedRows: data.skippedRows ?? 0,
+            });
+            setSelectedCsvFile(null);
+            showSuccess('Classes CSV imported successfully');
+            await fetchClasses();
+            onRefresh();
+        } catch (error) {
+            console.error('Failed to import classes CSV:', error);
+            setCsvErrors([
+                error instanceof Error
+                    ? error.message
+                    : 'Unexpected error while importing classes CSV',
+            ]);
+        } finally {
+            setCsvUploading(false);
+        }
     };
 
     // Add new class
@@ -229,6 +306,67 @@ export default function ClassManager({ userEmail, onRefresh }: ClassManagerProps
                     <p className="text-xs sm:text-sm text-red-800">{errorMessage}</p>
                 </div>
             )}
+
+            {/* Add New Class Form */}
+            <div className="border border-gray-200 rounded-lg p-3 sm:p-4 mb-4 bg-gray-50/60">
+                <p className="text-xs font-medium text-gray-700 mb-2">Upload Classes (CSV)</p>
+                <p className="text-[11px] sm:text-xs text-gray-500 mb-3">
+                    Required column: <span className="font-medium">name</span>. Optional columns: <span className="font-medium">schedule</span>, <span className="font-medium">length_minutes</span>.
+                </p>
+
+                <input
+                    type="file"
+                    accept=".csv,text/csv"
+                    className="hidden"
+                    id="classesCsvUpload"
+                    onChange={(e) => handleCsvFileSelect(e.target.files?.[0] ?? null)}
+                />
+
+                <div className="flex flex-wrap gap-2 items-center">
+                    <label
+                        htmlFor="classesCsvUpload"
+                        className={`cursor-pointer px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg border text-xs sm:text-sm font-medium transition ${csvUploading
+                            ? 'border-gray-200 bg-gray-200 text-gray-400 cursor-not-allowed pointer-events-none'
+                            : 'border-gray-300 text-gray-700 hover:bg-gray-100'
+                            }`}
+                    >
+                        Choose CSV
+                    </label>
+                    <button
+                        onClick={handleUploadCsv}
+                        disabled={!selectedCsvFile || csvUploading}
+                        className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition ${selectedCsvFile && !csvUploading
+                            ? 'bg-black text-white hover:opacity-90'
+                            : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                            }`}
+                    >
+                        {csvUploading ? 'Uploading...' : 'Upload Classes'}
+                    </button>
+                </div>
+
+                {selectedCsvFile && (
+                    <p className="mt-2 text-xs text-gray-500">Selected: {selectedCsvFile.name}</p>
+                )}
+
+                {csvSummary && (
+                    <div className="mt-3 text-xs sm:text-sm text-green-700 space-y-1">
+                        <p>Inserted: {csvSummary.insertedClasses}</p>
+                        <p>Updated: {csvSummary.updatedClasses}</p>
+                        <p>Processed rows: {csvSummary.totalProcessed}</p>
+                        {csvSummary.skippedRows > 0 && (
+                            <p>Skipped rows: {csvSummary.skippedRows}</p>
+                        )}
+                    </div>
+                )}
+
+                {csvErrors.length > 0 && (
+                    <div className="mt-3 text-xs sm:text-sm text-red-700 space-y-1">
+                        {csvErrors.map((msg, index) => (
+                            <p key={`${msg}-${index}`}>{msg}</p>
+                        ))}
+                    </div>
+                )}
+            </div>
 
             {/* Add New Class Form */}
             <div className="border border-gray-200 rounded-lg p-3 sm:p-4 mb-4">

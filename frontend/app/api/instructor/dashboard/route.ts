@@ -218,7 +218,7 @@ export async function GET(request: NextRequest) {
 
     const { data: memberSkillRows, error: memberSkillError } = await supabaseAdmin
       .from('member_skill')
-      .select('member_id, skill_id, date_acquired')
+      .select('member_id, skill_id, date_acquired, progress')
       .in('member_id', memberIds);
 
     if (memberSkillError) {

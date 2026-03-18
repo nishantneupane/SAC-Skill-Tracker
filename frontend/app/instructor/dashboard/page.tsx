@@ -154,6 +154,16 @@ export default function InstructorDashboard() {
     [todayClasses, selectedClassId]
   );
 
+  const visibleSwimmers = useMemo(() => {
+    const deduped = new Map<string, RosterSwimmerCard>();
+    swimmers.forEach((swimmer) => {
+      if (!deduped.has(swimmer.id)) {
+        deduped.set(swimmer.id, swimmer);
+      }
+    });
+    return Array.from(deduped.values());
+  }, [swimmers]);
+
   if (selectedClassId && selectedClass) {
     return (
       <InstructorClassView
@@ -281,12 +291,12 @@ export default function InstructorDashboard() {
 
           <div className="bg-white rounded-xl border border-gray-200 p-5 sm:p-6 shadow-sm">
             {(() => {
-              const totalSwimmers = swimmers.length;
-              const totalSkills = swimmers.reduce(
+              const totalSwimmers = visibleSwimmers.length;
+              const totalSkills = visibleSwimmers.reduce(
                 (acc, swimmer) => acc + (skillsBySwimmer[swimmer.id]?.length ?? 0),
                 0
               );
-              const masteredSkills = swimmers.reduce(
+              const masteredSkills = visibleSwimmers.reduce(
                 (acc, swimmer) =>
                   acc + (skillsBySwimmer[swimmer.id]?.filter((skill) => skill.mastered).length ?? 0),
                 0
@@ -335,10 +345,11 @@ export default function InstructorDashboard() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-            {swimmers.map((swimmer) => {
+            {visibleSwimmers.map((swimmer) => {
               const skills = skillsBySwimmer[swimmer.id] || [];
               const mastered = skills.filter((s) => s.mastered).length;
               const pct = formatPct(mastered, skills.length);
+              const shortId = swimmer.id.slice(0, 8);
 
               return (
                 <button
@@ -354,6 +365,9 @@ export default function InstructorDashboard() {
                       <div>
                         <p className="text-sm font-semibold text-gray-900">{swimmer.name}</p>
                         <p className="text-xs text-gray-500">{swimmer.level}</p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          Record: {shortId} • {swimmer.classIds.length} class{swimmer.classIds.length === 1 ? '' : 'es'}
+                        </p>
                         <p className="text-xs text-gray-400 mt-1">Next: {swimmer.nextSession}</p>
                       </div>
                     </div>
@@ -373,11 +387,22 @@ export default function InstructorDashboard() {
                     <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
                       <div className="h-full bg-gray-900" style={{ width: `${pct}%` }} />
                     </div>
+                    {swimmer.classIds.length === 0 && (
+                      <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mt-2">
+                        No class enrollment is linked to this swimmer for this instructor.
+                      </p>
+                    )}
                   </div>
 
                   <div className="mt-4">
                     <p className="text-xs font-medium text-gray-500 mb-2">Skills</p>
                     <div className="space-y-1">
+                      {skills.length === 0 && (
+                        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                          No skills assigned to this member record yet.
+                        </p>
+                      )}
+
                       {skills.slice(0, 4).map((skill) => (
                         <div key={skill.id} className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
@@ -405,7 +430,7 @@ export default function InstructorDashboard() {
             })}
           </div>
 
-          {!isLoading && !error && swimmers.length === 0 && (
+          {!isLoading && !error && visibleSwimmers.length === 0 && (
             <div className="mt-6 rounded-lg border border-gray-200 bg-white px-4 py-6 text-sm text-gray-600">
               No swimmers assigned to your classes yet.
             </div>
