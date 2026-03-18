@@ -46,7 +46,7 @@ interface DashboardPayload {
   skillsBySwimmer: Record<string, SkillItem[]>;
   notes: NoteItem[];
   error?: string;
-}
+} 
 
 function getInitials(name: string) {
   return name
@@ -159,7 +159,6 @@ export default function InstructorDashboard() {
       <InstructorClassView
         classInfo={selectedClass}
         swimmers={swimmersByClass[selectedClassId] ?? []}
-        skillsBySwimmer={skillsBySwimmer}
         onBack={() => setSelectedClassId(null)}
         onSwimmerClick={(swimmerId) => router.push(`/instructor/swimmers/${swimmerId}`)}
       />

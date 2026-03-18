@@ -7,6 +7,7 @@
 'use client';
 
 import { useState } from 'react';
+import EvaluationForm from '../../../components/EvaluationForm';
 
 interface ClassInfo {
   id: string;
@@ -40,7 +41,6 @@ function getInitials(name: string) {
 interface InstructorClassViewProps {
   classInfo: ClassInfo;
   swimmers: ClassSwimmer[];
-  skillsBySwimmer: Record<string, SkillItem[]>;
   onBack: () => void;
   onSwimmerClick: (swimmerId: string) => void;
 }
@@ -48,20 +48,20 @@ interface InstructorClassViewProps {
 export default function InstructorClassView({
   classInfo,
   swimmers,
-  skillsBySwimmer,
   onBack,
   onSwimmerClick,
 }: InstructorClassViewProps) {
-  const [searchValue, setSearchValue] = useState('');
+  const [openSwimmerId, setOpenSwimmerId] = useState<string | null>(null);
+  const [completedEvals, setCompletedEvals] = useState<string[]>([]);
 
-  const filteredSwimmers = swimmers.filter((swimmer) => {
-    const query = searchValue.trim().toLowerCase();
-    if (!query) return true;
-    return (
-      swimmer.name.toLowerCase().includes(query) ||
-      swimmer.level.toLowerCase().includes(query)
-    );
-  });
+  const handleSwimmerClick = (swimmerId: string) => {
+    setOpenSwimmerId(openSwimmerId === swimmerId ? null : swimmerId);
+  };
+
+  const handleSubmissionComplete = (swimmerId: string) => {
+    setOpenSwimmerId(null);
+    setCompletedEvals(prev => [...prev, swimmerId]);
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -95,31 +95,18 @@ export default function InstructorClassView({
           <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
             <div>
               <h2 className="text-sm font-semibold text-gray-900">Class Roster</h2>
-              <p className="text-xs text-gray-500">Review swimmer progress and open individual detail pages.</p>
+              <p className="text-xs text-gray-500">Select a swimmer to evaluate.</p>
             </div>
-            <input
-              type="text"
-              value={searchValue}
-              onChange={(event) => setSearchValue(event.target.value)}
-              placeholder="Search swimmers..."
-              className="w-56 rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-gray-300"
-            />
           </div>
 
           <div className="divide-y divide-gray-100">
-            {filteredSwimmers.map((swimmer) => {
-              const swimmerSkills = skillsBySwimmer[swimmer.id] ?? [];
-              const mastered = swimmerSkills.filter((skill) => skill.mastered).length;
-              const progress = swimmerSkills.length
-                ? Math.round((mastered / swimmerSkills.length) * 100)
-                : 0;
-
-              return (
-                <div key={swimmer.id} className="px-6 py-4 hover:bg-gray-50 transition">
+            {swimmers.map((swimmer) => (
+              <div key={swimmer.id}>
+                <div className="px-6 py-4 hover:bg-gray-50 transition">
                   <div className="flex items-center justify-between gap-4">
-                    <button
-                      onClick={() => onSwimmerClick(swimmer.id)}
-                      className="flex items-center gap-4 text-left flex-1 min-w-0"
+                    <div
+                      className="flex items-center gap-4 text-left flex-1 min-w-0 cursor-pointer"
+                      onClick={() => handleSwimmerClick(swimmer.id)}
                     >
                       <div className="h-10 w-10 rounded-full bg-gray-100 flex items-center justify-center text-sm font-semibold text-gray-700 flex-shrink-0">
                         {getInitials(swimmer.name)}
@@ -127,28 +114,43 @@ export default function InstructorClassView({
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-semibold text-gray-900 truncate">{swimmer.name}</p>
                         <p className="text-xs text-gray-500">{swimmer.level}</p>
-                        <p className="text-xs text-gray-400 mt-1 truncate">Next session: {swimmer.nextSession}</p>
                       </div>
-                      <div className="hidden md:flex items-center gap-3 flex-shrink-0">
-                        <div className="w-24">
-                          <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
-                            <span>Progress</span>
-                            <span>{progress}%</span>
-                          </div>
-                          <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
-                            <div className="h-full bg-gray-900" style={{ width: `${progress}%` }} />
-                          </div>
-                        </div>
-                      </div>
-                    </button>
-
-                    <span className="text-xs text-gray-400">Open</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {completedEvals.includes(swimmer.id) && (
+                        <span className="text-xs text-green-600 font-semibold flex items-center gap-1">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg>
+                          Completed
+                        </span>
+                      )}
+                      <button
+                        onClick={() => onSwimmerClick(swimmer.id)}
+                        className="btn btn-ghost btn-sm"
+                      >
+                        Profile
+                      </button>
+                      <button
+                        onClick={() => handleSwimmerClick(swimmer.id)}
+                        className="btn btn-sm w-24"
+                      >
+                        {openSwimmerId === swimmer.id ? 'Close' : 'Evaluate'}
+                      </button>
+                    </div>
                   </div>
                 </div>
-              );
-            })}
+                {openSwimmerId === swimmer.id && (
+                  <div className="p-4 bg-gray-50 border-t border-gray-100">
+                    <EvaluationForm
+                      level={parseInt(swimmer.level, 10)}
+                      swimmerId={swimmer.id}
+                      onSubmissionComplete={() => handleSubmissionComplete(swimmer.id)}
+                    />
+                  </div>
+                )}
+              </div> 
+            ))}
 
-            {filteredSwimmers.length === 0 && (
+            {swimmers.length === 0 && (
               <div className="px-6 py-6 text-sm text-gray-500">No swimmers enrolled in this class.</div>
             )}
           </div>
