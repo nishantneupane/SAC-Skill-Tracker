@@ -263,8 +263,18 @@ export default function InstructorDashboard() {
                         <div className="h-10 w-10 rounded-full bg-gray-100 flex items-center justify-center text-sm font-semibold text-gray-700">
                           {getInitials(swimmer.name)}
                         </div>
-                        <div>
+                        <div className="flex items-center gap-2">
                           <p className="text-sm font-semibold text-gray-900">{swimmer.name}</p>
+                          <button
+                            type="button"
+                            className="text-[11px] text-blue-600 hover:text-blue-700 hover:underline"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              router.push(`/instructor/swimmers/${swimmer.id}`);
+                            }}
+                          >
+                            View full profile
+                          </button>
                         </div>
                       </div>
 

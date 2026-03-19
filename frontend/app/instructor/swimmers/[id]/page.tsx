@@ -33,18 +33,10 @@ interface Skill {
   dateAcquired?: string;
 }
 
-interface Note {
-  id: string;
-  date: string;
-  content: string;
-  author: string;
-}
-
 interface SwimmerPayload {
   swimmer: SwimmerDetail;
   classes: ClassInfo[];
   skills: Skill[];
-  notes: Note[];
   error?: string;
 }
 
@@ -62,21 +54,17 @@ export default function InstructorSwimmerDetail() {
   const params = useParams();
   const swimmerId = params.id as string;
 
-  const [activeTab, setActiveTab] = useState<'skills' | 'notes'>('skills');
-  const [newNote, setNewNote] = useState('');
   const [skillNotes, setSkillNotes] = useState<Record<string, string>>({});
   const [savedSkillMastery, setSavedSkillMastery] = useState<Record<string, boolean>>({});
 
   const [swimmer, setSwimmer] = useState<SwimmerDetail | null>(null);
   const [classes, setClasses] = useState<ClassInfo[]>([]);
   const [skills, setSkills] = useState<Skill[]>([]);
-  const [notes, setNotes] = useState<Note[]>([]);
   const [selectedClassId, setSelectedClassId] = useState('');
 
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [saveError, setSaveError] = useState('');
-  const [isSavingNote, setIsSavingNote] = useState(false);
   const [savingSkillId, setSavingSkillId] = useState<string | null>(null);
 
   const loadSwimmerData = async () => {
@@ -111,7 +99,6 @@ export default function InstructorSwimmerDetail() {
       setSavedSkillMastery(
         Object.fromEntries((payload.skills ?? []).map((skill) => [skill.id, skill.mastered]))
       );
-      setNotes(payload.notes ?? []);
       setSelectedClassId((payload.classes ?? [])[0]?.id ?? '');
     } catch (fetchError) {
       const message = fetchError instanceof Error ? fetchError.message : 'Unexpected error';
@@ -119,7 +106,6 @@ export default function InstructorSwimmerDetail() {
       setSwimmer(null);
       setClasses([]);
       setSkills([]);
-      setNotes([]);
       setSelectedClassId('');
     } finally {
       setIsLoading(false);
@@ -141,80 +127,10 @@ export default function InstructorSwimmerDetail() {
     [masteredCount, skills.length]
   );
 
-  const toggleSkill = (skill: Skill) => {
-    setSaveError('');
-
-    setSkills((prev) =>
-      prev.map((item) =>
-        item.id === skill.id
-          ? {
-              ...item,
-              mastered: !item.mastered,
-              progress: !item.mastered ? 100 : 0,
-              dateAcquired: !item.mastered
-                ? new Date().toLocaleDateString('en-US', {
-                    month: 'short',
-                    day: 'numeric',
-                    year: 'numeric',
-                  })
-                : undefined,
-            }
-          : item
-      )
-    );
-  };
-
-  const handleAddNote = async () => {
-    try {
-      if (!newNote.trim()) return;
-
-      setSaveError('');
-      setIsSavingNote(true);
-
-      const stored = localStorage.getItem('user');
-      if (!stored) {
-        throw new Error('Missing local user session. Please log in again.');
-      }
-
-      const userData = JSON.parse(stored);
-      const email = userData.email;
-
-      if (!email) {
-        throw new Error('Missing user email from login session.');
-      }
-
-      const response = await fetch(`/api/instructor/swimmers/${swimmerId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email,
-          note: newNote,
-          classId: selectedClassId || undefined,
-        }),
-      });
-
-      const payload = (await response.json()) as { error?: string };
-
-      if (!response.ok) {
-        throw new Error(payload.error || 'Failed to save note.');
-      }
-
-      setNewNote('');
-      await loadSwimmerData();
-    } catch (postError) {
-      const message = postError instanceof Error ? postError.message : 'Failed to save note';
-      setSaveError(message);
-    } finally {
-      setIsSavingNote(false);
-    }
-  };
-
   const handleSubmitSkill = async (skill: Skill) => {
     try {
       const note = skillNotes[skill.id]?.trim() ?? '';
-      const masteryChanged = savedSkillMastery[skill.id] !== skill.mastered;
-
-      if (!note && !masteryChanged) return;
+      if (!note) return;
 
       setSaveError('');
       setSavingSkillId(skill.id);
@@ -238,8 +154,6 @@ export default function InstructorSwimmerDetail() {
           email,
           note: note ? `Skill: ${skill.name}\nNote: ${note}` : undefined,
           classId: selectedClassId || undefined,
-          skillId: masteryChanged ? skill.id : undefined,
-          mastered: masteryChanged ? skill.mastered : undefined,
         }),
       });
 
@@ -320,189 +234,6 @@ export default function InstructorSwimmerDetail() {
           </div>
         )}
 
-        <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
-            <p className="text-2xl font-bold text-gray-900">{progressPct}%</p>
-            <p className="text-xs text-gray-500">Skills Mastered</p>
-          </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
-            <p className="text-2xl font-bold text-gray-900">
-              {masteredCount}/{skills.length}
-            </p>
-            <p className="text-xs text-gray-500">Skills Complete</p>
-          </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
-            <p className="text-sm font-semibold text-gray-900">{swimmer?.enrollmentDate || 'N/A'}</p>
-            <p className="text-xs text-gray-500">Enrollment Date</p>
-          </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
-            <p className="text-sm font-semibold text-gray-900">{classes.length}</p>
-            <p className="text-xs text-gray-500">Enrolled Classes</p>
-          </div>
-        </section>
-
-        <div className="flex gap-2 border-b border-gray-200">
-          {(['skills', 'notes'] as const).map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`px-4 py-2 text-sm font-medium border-b-2 transition ${
-                activeTab === tab
-                  ? 'border-gray-900 text-gray-900'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              {tab.charAt(0).toUpperCase() + tab.slice(1)}
-            </button>
-          ))}
-        </div>
-
-        {activeTab === 'skills' && (
-          <section className="space-y-6">
-            <div className="bg-white rounded-xl border border-gray-200 p-6">
-              <div className="flex items-center justify-between gap-4 mb-2">
-                <div>
-                  <span className="text-sm font-medium text-gray-900">{swimmer?.level} Progress</span>
-                  <p className="text-sm text-gray-500">
-                    {masteredCount} of {skills.length} skills
-                  </p>
-                </div>
-                {classes.length > 0 && (
-                  <select
-                    value={selectedClassId}
-                    onChange={(e) => setSelectedClassId(e.target.value)}
-                    className="rounded-lg border border-gray-200 px-3 py-2 text-sm"
-                  >
-                    {classes.map((classItem) => (
-                      <option key={classItem.id} value={classItem.id}>
-                        {classItem.name} ({classItem.schedule})
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
-              <div className="w-full h-3 bg-gray-100 rounded-full overflow-hidden">
-                <div className="h-full bg-gray-900 transition-all" style={{ width: `${progressPct}%` }} />
-              </div>
-            </div>
-
-            <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
-              {skills.map((skill) => (
-                <div key={skill.id} className="px-6 py-4 space-y-3">
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-3">
-                      <button
-                        onClick={() => toggleSkill(skill)}
-                        className={`h-7 w-7 rounded-full flex items-center justify-center text-sm transition ${
-                          skill.mastered
-                            ? 'bg-green-100 text-green-600'
-                            : 'bg-gray-100 text-gray-400 hover:bg-gray-200'
-                        }`}
-                      >
-                        {skill.mastered ? '✓' : '○'}
-                      </button>
-                      <div>
-                        <p className={`text-sm ${skill.mastered ? 'text-gray-900' : 'text-gray-600'}`}>
-                          {skill.name}
-                        </p>
-                        <p className="text-xs text-gray-400">Progress: {skill.progress}%</p>
-                      </div>
-                    </div>
-
-                    <div className="text-right">
-                      {skill.mastered && skill.dateAcquired ? (
-                        <span className="text-xs text-gray-400">{skill.dateAcquired}</span>
-                      ) : (
-                        <span className="text-xs text-gray-400">Not yet acquired</span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col gap-3 md:flex-row">
-                    <input
-                      type="text"
-                      value={skillNotes[skill.id] ?? ''}
-                      onChange={(e) =>
-                        setSkillNotes((prev) => ({ ...prev, [skill.id]: e.target.value }))
-                      }
-                      placeholder="Add skill note..."
-                      className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-200"
-                    />
-                    <button
-                      onClick={() => handleSubmitSkill(skill)}
-                      disabled={
-                        savingSkillId === skill.id ||
-                        (!skillNotes[skill.id]?.trim() &&
-                          savedSkillMastery[skill.id] === skill.mastered)
-                      }
-                      className="px-4 py-2 text-sm font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:bg-gray-300 disabled:cursor-not-allowed transition"
-                    >
-                      {savingSkillId === skill.id ? 'Saving...' : 'Submit'}
-                    </button>
-                  </div>
-                </div>
-              ))}
-
-              {skills.length === 0 && (
-                <div className="px-6 py-6 text-sm text-gray-500">No skills tracked for this swimmer yet.</div>
-              )}
-            </div>
-          </section>
-        )}
-
-        {activeTab === 'notes' && (
-          <section className="space-y-4">
-            <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
-              <textarea
-                value={newNote}
-                onChange={(e) => setNewNote(e.target.value)}
-                placeholder="Add a note about this swimmer..."
-                className="w-full h-24 p-3 text-sm border border-gray-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-gray-200"
-              />
-
-              {classes.length > 0 && (
-                <select
-                  value={selectedClassId}
-                  onChange={(e) => setSelectedClassId(e.target.value)}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
-                >
-                  {classes.map((classItem) => (
-                    <option key={classItem.id} value={classItem.id}>
-                      {classItem.name} ({classItem.schedule})
-                    </option>
-                  ))}
-                </select>
-              )}
-
-              <div className="flex justify-end">
-                <button
-                  onClick={handleAddNote}
-                  disabled={!newNote.trim() || isSavingNote}
-                  className="px-4 py-2 text-sm font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:bg-gray-300 disabled:cursor-not-allowed transition"
-                >
-                  {isSavingNote ? 'Saving...' : 'Add Note'}
-                </button>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
-              {notes.length === 0 ? (
-                <div className="p-6 text-center text-gray-500 text-sm">No notes yet</div>
-              ) : (
-                notes.map((note) => (
-                  <div key={note.id} className="px-6 py-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-medium text-gray-900">{note.author}</span>
-                      <span className="text-xs text-gray-400">{note.date}</span>
-                    </div>
-                    <p className="text-sm text-gray-600">{note.content}</p>
-                  </div>
-                ))
-              )}
-            </div>
-          </section>
-        )}
-
         <section className="bg-white rounded-xl border border-gray-200 p-6">
           <h3 className="text-sm font-semibold text-gray-900 mb-4">Parent/Guardian Contact</h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -526,6 +257,50 @@ export default function InstructorSwimmerDetail() {
             </div>
           </div>
         </section>
+
+        <section className="space-y-6">
+            <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
+              {skills.map((skill) => (
+                <div key={skill.id} className="px-6 py-4 space-y-3">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <p className={`text-sm ${skill.mastered ? 'text-gray-900' : 'text-gray-600'}`}>
+                        {skill.name}
+                      </p>
+                      {skill.mastered && skill.dateAcquired && (
+                        <p className="text-xs text-gray-400">Mastered on {skill.dateAcquired}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-3 md:flex-row">
+                    <input
+                      type="text"
+                      value={skillNotes[skill.id] ?? ''}
+                      onChange={(e) =>
+                        setSkillNotes((prev) => ({ ...prev, [skill.id]: e.target.value }))
+                      }
+                      placeholder="Add skill note..."
+                      className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-200"
+                    />
+                    <button
+                      onClick={() => handleSubmitSkill(skill)}
+                      disabled={
+                        savingSkillId === skill.id || !skillNotes[skill.id]?.trim()
+                      }
+                      className="px-3 py-1.5 text-xs font-medium bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-blue-300 disabled:cursor-not-allowed transition"
+                    >
+                      {savingSkillId === skill.id ? 'Saving...' : 'Submit'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+
+              {skills.length === 0 && (
+                <div className="px-6 py-6 text-sm text-gray-500">No skills tracked for this swimmer yet.</div>
+              )}
+            </div>
+          </section>
       </main>
     </div>
   );
