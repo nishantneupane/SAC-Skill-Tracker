@@ -22,14 +22,24 @@ as $$
     order by po.joined_at nulls last
     limit 1
   ),
+  linked_members as (
+    select gm.member_id
+    from target_person tp
+    join guardian_member gm on gm.guardian_person_id = tp.person_id
+
+    union
+
+    select pm.member_id
+    from target_person tp
+    join person_member pm on pm.person_id = tp.person_id
+  ),
   member_base as (
     select
       m.member_id,
       trim(concat_ws(' ', m.first_name, m.last_name)) as name,
       coalesce(m.level, 'Unassigned level') as level
-    from target_person tp
-    join guardian_member gm on gm.guardian_person_id = tp.person_id
-    join member m on m.member_id = gm.member_id
+    from linked_members lm
+    join member m on m.member_id = lm.member_id
   ),
   member_next_session as (
     select distinct on (e.member_id)
@@ -40,6 +50,14 @@ as $$
     join member_base mb on mb.member_id = e.member_id
     order by e.member_id, ce.name, ce.class_id
   ),
+  member_class_ids as (
+    select
+      e.member_id,
+      array_agg(e.class_id::text order by e.class_id) as class_ids
+    from enrollment e
+    join member_base mb on mb.member_id = e.member_id
+    group by e.member_id
+  ),
   swimmers_json as (
     select coalesce(
       jsonb_agg(
@@ -47,7 +65,8 @@ as $$
           'id', mb.member_id,
           'name', mb.name,
           'level', mb.level,
-          'nextSession', coalesce(mns.next_session, 'No upcoming session')
+          'nextSession', coalesce(mns.next_session, 'No upcoming session'),
+          'classIds', coalesce(to_jsonb(mci.class_ids), '[]'::jsonb)
         )
         order by mb.name asc
       ),
@@ -55,6 +74,7 @@ as $$
     ) as swimmers
     from member_base mb
     left join member_next_session mns on mns.member_id = mb.member_id
+    left join member_class_ids mci on mci.member_id = mb.member_id
   ),
   skills_grouped as (
     select

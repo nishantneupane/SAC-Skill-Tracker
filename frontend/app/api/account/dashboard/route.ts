@@ -14,6 +14,7 @@ interface DashboardPayload {
     name: string;
     level: string;
     nextSession: string;
+    classIds?: string[];
   }>;
   skillsBySwimmer: Record<
     string,

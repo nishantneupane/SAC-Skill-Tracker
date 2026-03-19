@@ -33,7 +33,7 @@ interface SkillItem {
 interface DashboardPayload {
   userName: string;
   organizationName?: string;
-  swimmers: SwimmerCard[];
+  swimmers: Array<Omit<SwimmerCard, 'classIds'> & { classIds?: string[] }>;
   skillsBySwimmer: Record<string, SkillItem[]>;
   notes: NoteItem[];
 }
@@ -92,7 +92,12 @@ export default function AccountDashboard() {
 
         setUserName(payload.userName || localName);
         setOrganizationName(payload.organizationName || 'SAC Skill Tracker');
-        setSwimmers(payload.swimmers ?? []);
+        setSwimmers(
+          (payload.swimmers ?? []).map((swimmer) => ({
+            ...swimmer,
+            classIds: swimmer.classIds ?? [],
+          }))
+        );
         setSkillsBySwimmer(payload.skillsBySwimmer ?? {});
         setNotes(payload.notes ?? []);
       } catch (fetchError) {
