@@ -17,19 +17,12 @@ interface MemberCandidate {
     has_person_account?: boolean;
 }
 
-interface Class {
-    class_id: string;
-    name: string;
-    schedule?: string;
-}
-
 interface Instructor {
     person_id: string;
     first_name: string;
     last_name: string;
     email?: string | null;
     created_at: string;
-    class_ids?: string[];
 }
 
 interface InstructorManagerProps {
@@ -46,7 +39,6 @@ export default function InstructorManager({ userEmail, onRefresh }: InstructorMa
     // Lists
     const [instructors, setInstructors] = useState<Instructor[]>([]);
     const [availablePersons, setAvailablePersons] = useState<MemberCandidate[]>([]);
-    const [classes, setClasses] = useState<Class[]>([]);
 
     // Form state for existing person mode
     const [selectedMemberId, setSelectedMemberId] = useState('');
@@ -59,16 +51,24 @@ export default function InstructorManager({ userEmail, onRefresh }: InstructorMa
     const [lastName, setLastName] = useState('');
     const [email, setEmail] = useState('');
 
-    // Shared state
-    const [selectedClassIds, setSelectedClassIds] = useState<string[]>([]);
-
     // Editing state
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editingName, setEditingName] = useState('');
-    const [classEditorId, setClassEditorId] = useState<string | null>(null);
-    const [classEditorSelection, setClassEditorSelection] = useState<string[]>([]);
-    const [savingClasses, setSavingClasses] = useState(false);
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
+    const [toasts, setToasts] = useState<Array<{ id: number; message: string; type: 'success' | 'error' }>>([]);
+    const [deleteDialog, setDeleteDialog] = useState<{ show: boolean; personId: string | null; personName: string }>({
+        show: false,
+        personId: null,
+        personName: '',
+    });
+
+    const showToast = (message: string, type: 'success' | 'error' = 'error') => {
+        const id = Date.now() + Math.floor(Math.random() * 1000);
+        setToasts((prev) => [...prev, { id, message, type }]);
+        setTimeout(() => {
+            setToasts((prev) => prev.filter((toast) => toast.id !== id));
+        }, 3500);
+    };
 
     // Fetch instructors
     const fetchInstructors = async () => {
@@ -92,30 +92,36 @@ export default function InstructorManager({ userEmail, onRefresh }: InstructorMa
             const response = await fetch(`/api/admin/persons?email=${encodeURIComponent(userEmail)}`);
             const data = await response.json();
             if (response.ok) {
-                setAvailablePersons(data.persons || []);
+                const persons = data.persons || [];
+                if (persons.length > 0) {
+                    setAvailablePersons(persons);
+                    return;
+                }
+            }
+
+            // Fallback: if persons endpoint is empty, use swimmers endpoint as member source.
+            const swimmersResponse = await fetch(`/api/admin/swimmers?email=${encodeURIComponent(userEmail)}`);
+            const swimmersData = await swimmersResponse.json();
+            if (swimmersResponse.ok) {
+                const fallbackPersons = (swimmersData.swimmers || []).map((swimmer: any) => ({
+                    member_id: swimmer.member_id,
+                    person_id: null,
+                    first_name: swimmer.first_name || '',
+                    last_name: swimmer.last_name || '',
+                    email: null,
+                    has_person_account: false,
+                }));
+                setAvailablePersons(fallbackPersons);
             }
         } catch (error) {
             console.error('Failed to fetch persons:', error);
         }
     };
 
-    // Fetch classes
-    const fetchClasses = async () => {
-        try {
-            const response = await fetch(`/api/admin/classes?email=${encodeURIComponent(userEmail)}`);
-            const data = await response.json();
-            if (response.ok) {
-                setClasses(data.classes || []);
-            }
-        } catch (error) {
-            console.error('Failed to fetch classes:', error);
-        }
-    };
-
     useEffect(() => {
+        if (!userEmail) return;
         fetchInstructors();
         fetchAvailablePersons();
-        fetchClasses();
     }, [userEmail]);
 
     // Close dropdown when clicking outside
@@ -139,16 +145,16 @@ export default function InstructorManager({ userEmail, onRefresh }: InstructorMa
         setFirstName('');
         setLastName('');
         setEmail('');
-        setSelectedClassIds([]);
         setSuccessMessage(null);
     }, [mode]);
 
-    // Exclude current instructors so grant-access only shows eligible members.
+    // Prefer excluding current instructors, but fall back to all members if that empties the list.
     const instructorIds = new Set(instructors.map((inst) => inst.person_id));
     const eligibleMembers = availablePersons.filter((person) => !person.person_id || !instructorIds.has(person.person_id));
+    const selectableMembers = eligibleMembers.length > 0 ? eligibleMembers : availablePersons;
 
     // Filter eligible members based on search query
-    const filteredPersons = eligibleMembers.filter(person => {
+    const filteredPersons = selectableMembers.filter(person => {
         const fullName = `${person.first_name} ${person.last_name}`.toLowerCase();
         const email = person.email?.toLowerCase() || '';
         const query = personSearchQuery.toLowerCase();
@@ -156,7 +162,7 @@ export default function InstructorManager({ userEmail, onRefresh }: InstructorMa
     });
 
     // Get selected person details for display
-    const selectedPerson = eligibleMembers.find((p) => p.member_id === selectedMemberId);
+    const selectedPerson = selectableMembers.find((p) => p.member_id === selectedMemberId);
 
     const handleSelectPerson = (person: MemberCandidate) => {
         setSelectedMemberId(person.member_id);
@@ -165,71 +171,17 @@ export default function InstructorManager({ userEmail, onRefresh }: InstructorMa
         setShowPersonDropdown(false);
     };
 
-    const handleToggleClass = (classId: string) => {
-        setSelectedClassIds(prev =>
-            prev.includes(classId)
-                ? prev.filter(id => id !== classId)
-                : [...prev, classId]
-        );
-    };
-
     const formatName = (firstName?: string | null, lastName?: string | null) => {
         return [firstName || '', lastName || ''].join(' ').trim();
     };
 
-    const startClassEdit = (instructor: Instructor) => {
-        if (classEditorId === instructor.person_id) {
-            setClassEditorId(null);
-            setClassEditorSelection([]);
-            return;
-        }
-
-        setClassEditorId(instructor.person_id);
-        setClassEditorSelection(instructor.class_ids || []);
-    };
-
-    const toggleClassSelectionForInstructor = (classId: string) => {
-        setClassEditorSelection((prev) =>
-            prev.includes(classId) ? prev.filter((id) => id !== classId) : [...prev, classId]
-        );
-    };
-
-    const saveClassAssignments = async (personId: string) => {
-        setSavingClasses(true);
-        try {
-            const response = await fetch('/api/admin/instructors', {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    admin_email: userEmail,
-                    person_id: personId,
-                    class_ids: classEditorSelection,
-                }),
-            });
-
-            if (!response.ok) {
-                const data = await response.json();
-                throw new Error(data.error || 'Failed to update instructor classes');
-            }
-
-            setSuccessMessage('Instructor classes updated successfully.');
-            setClassEditorId(null);
-            setClassEditorSelection([]);
-            await fetchInstructors();
-        } catch (error: any) {
-            alert(error.message || 'Failed to update instructor classes');
-        } finally {
-            setSavingClasses(false);
-        }
-    };
-
     const handleSubmit = async () => {
         if (mode === 'existing' && !selectedMemberId) {
-            alert('Please select a person');
+            showToast('Please select a person', 'error');
             return;
         }
         if (mode === 'new' && (!firstName.trim() || !lastName.trim() || !email.trim())) {
-            alert('Please fill in all fields');
+            showToast('Please fill in all fields', 'error');
             return;
         }
 
@@ -239,11 +191,10 @@ export default function InstructorManager({ userEmail, onRefresh }: InstructorMa
             const payload: any = {
                 admin_email: userEmail,
                 mode,
-                class_ids: selectedClassIds,
             };
 
             if (mode === 'existing') {
-                const candidate = eligibleMembers.find((p) => p.member_id === selectedMemberId);
+                const candidate = selectableMembers.find((p) => p.member_id === selectedMemberId);
                 if (!candidate) throw new Error('Selected member not found');
 
                 if (candidate.person_id) {
@@ -284,17 +235,19 @@ export default function InstructorManager({ userEmail, onRefresh }: InstructorMa
             setFirstName('');
             setLastName('');
             setEmail('');
-            setSelectedClassIds([]);
 
-            const classText = selectedClassIds.length > 0
-                ? ` and assigned to ${selectedClassIds.length} class${selectedClassIds.length === 1 ? '' : 'es'}`
-                : '';
             const createdName = `${firstName.trim()} ${lastName.trim()}`.trim();
             const createdFromMember = mode === 'existing' && previousSelection && !previousSelection.person_id;
             setSuccessMessage(
                 mode === 'existing' && !createdFromMember
-                    ? `Instructor access granted successfully${classText}.`
-                    : `Instructor ${createdName || 'account'} created successfully${classText}.`
+                    ? 'Instructor access granted successfully.'
+                    : `Instructor ${createdName || 'account'} created successfully.`
+            );
+            showToast(
+                mode === 'existing' && !createdFromMember
+                    ? 'Instructor access granted successfully.'
+                    : `Instructor ${createdName || 'account'} created successfully.`,
+                'success'
             );
 
             // Refresh lists
@@ -302,7 +255,7 @@ export default function InstructorManager({ userEmail, onRefresh }: InstructorMa
             await fetchAvailablePersons();
             onRefresh();
         } catch (error: any) {
-            alert(error.message);
+            showToast(error?.message || 'Failed to add instructor', 'error');
         } finally {
             setLoading(false);
         }
@@ -328,13 +281,25 @@ export default function InstructorManager({ userEmail, onRefresh }: InstructorMa
             setEditingName('');
             await fetchInstructors();
             onRefresh();
+            showToast('Instructor updated successfully', 'success');
         } catch (error) {
-            alert('Failed to update instructor');
+            showToast('Failed to update instructor', 'error');
         }
     };
 
-    const handleDelete = async (personId: string) => {
-        if (!confirm('Remove this instructor? They will lose instructor access.')) return;
+    const requestDelete = (personId: string) => {
+        const instructor = instructors.find((item) => item.person_id === personId);
+        setDeleteDialog({
+            show: true,
+            personId,
+            personName: instructor ? formatName(instructor.first_name, instructor.last_name) : 'this instructor',
+        });
+    };
+
+    const handleDeleteConfirmed = async () => {
+        const personId = deleteDialog.personId;
+        if (!personId) return;
+        setDeleteDialog({ show: false, personId: null, personName: '' });
 
         try {
             const response = await fetch(`/api/admin/instructors?email=${encodeURIComponent(userEmail)}&person_id=${personId}`, {
@@ -346,8 +311,9 @@ export default function InstructorManager({ userEmail, onRefresh }: InstructorMa
             await fetchInstructors();
             await fetchAvailablePersons();
             onRefresh();
+            showToast('Instructor removed successfully', 'success');
         } catch (error) {
-            alert('Failed to remove instructor');
+            showToast('Failed to remove instructor', 'error');
         }
     };
 
@@ -387,7 +353,7 @@ export default function InstructorManager({ userEmail, onRefresh }: InstructorMa
             {mode === 'existing' ? (
                 <div ref={personDropdownRef} className="mb-4 relative">
                     <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
-                        Search & Select Member (excludes current instructors)
+                        Search & Select Member
                     </label>
                     <input
                         type="text"
@@ -408,7 +374,9 @@ export default function InstructorManager({ userEmail, onRefresh }: InstructorMa
                         <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
                             {filteredPersons.length === 0 ? (
                                 <div className="p-3 text-xs sm:text-sm text-gray-500 text-center">
-                                    No eligible members found matching "{personSearchQuery}"
+                                    {personSearchQuery
+                                        ? `No members found matching "${personSearchQuery}"`
+                                        : 'No members available to grant access'}
                                 </div>
                             ) : (
                                 filteredPersons.map((person) => (
@@ -499,36 +467,6 @@ export default function InstructorManager({ userEmail, onRefresh }: InstructorMa
                 </div>
             )}
 
-            {/* Class Selection */}
-            {classes.length > 0 && (
-                <div className="mb-4">
-                    <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">
-                        Assign to Classes (optional)
-                    </label>
-                    <div className="space-y-1.5 max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-2">
-                        {classes.map((classItem) => (
-                            <label
-                                key={classItem.class_id}
-                                className="flex items-center gap-2 p-1.5 hover:bg-gray-50 rounded cursor-pointer"
-                            >
-                                <input
-                                    type="checkbox"
-                                    checked={selectedClassIds.includes(classItem.class_id)}
-                                    onChange={() => handleToggleClass(classItem.class_id)}
-                                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-                                />
-                                <span className="text-xs sm:text-sm text-gray-900">
-                                    {classItem.name}
-                                    {classItem.schedule && (
-                                        <span className="text-gray-500 ml-1">({classItem.schedule})</span>
-                                    )}
-                                </span>
-                            </label>
-                        ))}
-                    </div>
-                </div>
-            )}
-
             {/* Submit Button */}
             <button
                 onClick={handleSubmit}
@@ -598,12 +536,6 @@ export default function InstructorManager({ userEmail, onRefresh }: InstructorMa
                                                 )}
                                             </span>
                                             <button
-                                                onClick={() => startClassEdit(instructor)}
-                                                className="text-[10px] sm:text-xs px-2 py-1 rounded-md border border-blue-200 text-blue-700 hover:bg-blue-50"
-                                            >
-                                                Classes
-                                            </button>
-                                            <button
                                                 onClick={() => {
                                                     setEditingId(instructor.person_id);
                                                     setEditingName(formatName(instructor.first_name, instructor.last_name));
@@ -615,7 +547,7 @@ export default function InstructorManager({ userEmail, onRefresh }: InstructorMa
                                                 </svg>
                                             </button>
                                             <button
-                                                onClick={() => handleDelete(instructor.person_id)}
+                                                onClick={() => requestDelete(instructor.person_id)}
                                                 className="text-red-600 hover:text-red-700 flex-shrink-0"
                                             >
                                                 <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -625,48 +557,50 @@ export default function InstructorManager({ userEmail, onRefresh }: InstructorMa
                                         </>
                                     )}
                                 </div>
-
-                                {classEditorId === instructor.person_id && (
-                                    <div className="mt-2 rounded-lg border border-gray-200 bg-white p-2">
-                                        <p className="text-[11px] sm:text-xs font-medium text-gray-700 mb-2">Assign classes</p>
-                                        <div className="space-y-1 max-h-36 overflow-y-auto">
-                                            {classes.map((classItem) => (
-                                                <label key={classItem.class_id} className="flex items-center gap-2 text-xs sm:text-sm text-gray-800 cursor-pointer">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={classEditorSelection.includes(classItem.class_id)}
-                                                        onChange={() => toggleClassSelectionForInstructor(classItem.class_id)}
-                                                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-                                                    />
-                                                    <span>{classItem.name}</span>
-                                                </label>
-                                            ))}
-                                        </div>
-                                        <div className="mt-2 flex gap-2">
-                                            <button
-                                                onClick={() => saveClassAssignments(instructor.person_id)}
-                                                disabled={savingClasses}
-                                                className="text-[10px] sm:text-xs px-2.5 py-1.5 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:bg-gray-300"
-                                            >
-                                                {savingClasses ? 'Saving...' : 'Save classes'}
-                                            </button>
-                                            <button
-                                                onClick={() => {
-                                                    setClassEditorId(null);
-                                                    setClassEditorSelection([]);
-                                                }}
-                                                className="text-[10px] sm:text-xs px-2.5 py-1.5 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
-                                            >
-                                                Cancel
-                                            </button>
-                                        </div>
-                                    </div>
-                                )}
                             </div>
                         ))}
                     </div>
                 )}
             </div>
+
+            {/* Right-side toast notifications */}
+            <div className="fixed top-4 right-4 z-[100] space-y-2 w-[92vw] max-w-sm pointer-events-none">
+                {toasts.map((toast) => (
+                    <div
+                        key={toast.id}
+                        className={`pointer-events-auto rounded-lg border px-3 py-2 shadow-lg text-xs sm:text-sm ${toast.type === 'success'
+                                ? 'bg-green-50 border-green-200 text-green-800'
+                                : 'bg-red-50 border-red-200 text-red-800'
+                            }`}
+                    >
+                        {toast.message}
+                    </div>
+                ))}
+            </div>
+
+            {/* Right-side delete confirmation */}
+            {deleteDialog.show && (
+                <div className="fixed top-20 right-4 z-[101] w-[92vw] max-w-sm rounded-xl border border-gray-200 bg-white shadow-2xl p-4">
+                    <p className="text-sm font-semibold text-gray-900">Confirm Remove</p>
+                    <p className="mt-1 text-xs sm:text-sm text-gray-600">
+                        Remove <span className="font-medium">{deleteDialog.personName}</span> from instructors?
+                    </p>
+                    <div className="mt-3 flex justify-end gap-2">
+                        <button
+                            onClick={() => setDeleteDialog({ show: false, personId: null, personName: '' })}
+                            className="px-3 py-1.5 text-xs sm:text-sm text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            onClick={handleDeleteConfirmed}
+                            className="px-3 py-1.5 text-xs sm:text-sm text-white bg-red-600 rounded-md hover:bg-red-700"
+                        >
+                            Remove
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

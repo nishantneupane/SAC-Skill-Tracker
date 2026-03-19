@@ -9,6 +9,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import InstructorManager from "@/components/InstructorManager";
 import ClassManager from "@/components/ClassManager";
+import InstructorAssignmentManager from "@/components/InstructorAssignmentManager";
 import ImportRoster from "@/components/ImportRoster";
 
 // Dashboard statistics from admin API
@@ -38,13 +39,19 @@ interface EntityState {
 }
 
 type EntityType = "skills" | "instructors" | "swimmers" | "parents" | "classes";
-type Tab = EntityType | "roster" | "admins";
+type Tab = EntityType | "roster" | "admins" | "assignments";
 
 interface OrgPerson {
   person_id: string;
   first_name?: string;
   last_name?: string;
   email?: string;
+}
+
+interface ToastMessage {
+  id: number;
+  message: string;
+  type: "success" | "error";
 }
 
 // Configuration for each entity type. Centralizes all entity-specific logic.
@@ -105,6 +112,44 @@ const ENTITY_CONFIG: Record<
 
 // Navigation tabs for the dashboard. Reusable for any entity type.
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
+  {
+    id: "assignments",
+    label: "Assignments",
+    icon: (
+      <svg
+        className="w-4 h-4"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M13 10V3L4 14h7v7l9-11h-7z"
+        />
+      </svg>
+    ),
+  },
+  {
+    id: "skills",
+    label: "Skills",
+    icon: (
+      <svg
+        className="w-4 h-4"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+        />
+      </svg>
+    ),
+  },
   {
     id: "admins",
     label: "Admins",
@@ -207,25 +252,6 @@ const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
     ),
   },
   {
-    id: "skills",
-    label: "Skills",
-    icon: (
-      <svg
-        className="w-4 h-4"
-        fill="none"
-        stroke="currentColor"
-        viewBox="0 0 24 24"
-      >
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth={2}
-          d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-        />
-      </svg>
-    ),
-  },
-  {
     id: "roster",
     label: "Roster Management",
     icon: (
@@ -283,6 +309,27 @@ function EntityEditor({
   onEditNameChange: (value: string) => void;
 }) {
   const config = ENTITY_CONFIG[type];
+  const [searchFilter, setSearchFilter] = useState("");
+
+  // Deduplicate swimmers by name to handle database duplicates
+  const deduplicatedList = type === "swimmers"
+    ? Array.from(
+      new Map(
+        state.list.map((item) => {
+          const displayName = config.displayName(item);
+          return [displayName.toLowerCase(), item];
+        })
+      ).values()
+    )
+    : state.list;
+
+  // Filter list by name if searching
+  const filteredList = searchFilter.trim()
+    ? deduplicatedList.filter((item) => {
+      const displayName = config.displayName(item).toLowerCase();
+      return displayName.includes(searchFilter.toLowerCase());
+    })
+    : deduplicatedList;
 
   return (
     <div className="bg-white rounded-lg sm:rounded-xl border border-gray-200 shadow-sm p-4 sm:p-6">
@@ -309,6 +356,19 @@ function EntityEditor({
         </button>
       </div>
 
+      {/* Search Filter - for swimmers tab */}
+      {type === "swimmers" && deduplicatedList.length > 0 && (
+        <div className="mb-4">
+          <input
+            type="text"
+            value={searchFilter}
+            onChange={(e) => setSearchFilter(e.target.value)}
+            placeholder="Search swimmers by name..."
+            className="w-full px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+          />
+        </div>
+      )}
+
       {/* Items List */}
       {state.loading ? (
         <div className="flex items-center justify-center py-6 sm:py-8">
@@ -318,105 +378,127 @@ function EntityEditor({
         <p className="text-xs sm:text-sm text-gray-500 text-center py-3 sm:py-4">
           No {config.pluralLabel.toLowerCase()} yet. Add one above!
         </p>
+      ) : filteredList.length === 0 ? (
+        <p className="text-xs sm:text-sm text-gray-500 text-center py-3 sm:py-4">
+          No {config.pluralLabel.toLowerCase()} match "{searchFilter}"
+        </p>
       ) : (
-        <div className="space-y-1">
-          {state.list.map((item) => (
-            <div
-              key={item.id}
-              className="flex items-center gap-2 py-1.5 sm:py-2 px-2 sm:px-3 rounded-lg hover:bg-gray-50 group"
-            >
-              {state.editingId === item.id ? (
-                <>
-                  <input
-                    type="text"
-                    value={state.editingName}
-                    onChange={(e) => onEditNameChange(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") onUpdate(item.id);
-                      if (e.key === "Escape") onCancelEdit();
-                    }}
-                    autoFocus
-                    className="flex-1 px-2 py-1 text-xs sm:text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                  />
-                  <button
-                    onClick={() => onUpdate(item.id)}
-                    className="text-green-600 hover:text-green-700 flex-shrink-0"
-                  >
-                    <svg
-                      className="w-3.5 h-3.5 sm:w-4 sm:h-4"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
+        <div className="space-y-3">
+          {filteredList.map((item) => (
+            <div key={item.id} className="border border-gray-200 rounded-lg p-3 hover:bg-gray-50 group">
+              <div className="flex items-center gap-2 py-1">
+                {state.editingId === item.id ? (
+                  <>
+                    <input
+                      type="text"
+                      value={state.editingName}
+                      onChange={(e) => onEditNameChange(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") onUpdate(item.id);
+                        if (e.key === "Escape") onCancelEdit();
+                      }}
+                      autoFocus
+                      className="flex-1 px-2 py-1 text-xs sm:text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                    />
+                    <button
+                      onClick={() => onUpdate(item.id)}
+                      className="text-green-600 hover:text-green-700 flex-shrink-0"
                     >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M5 13l4 4L19 7"
-                      />
-                    </svg>
-                  </button>
-                  <button
-                    onClick={onCancelEdit}
-                    className="text-gray-400 hover:text-gray-600 flex-shrink-0"
-                  >
-                    <svg
-                      className="w-3.5 h-3.5 sm:w-4 sm:h-4"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
+                      <svg
+                        className="w-3.5 h-3.5 sm:w-4 sm:h-4"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M5 13l4 4L19 7"
+                        />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={onCancelEdit}
+                      className="text-gray-400 hover:text-gray-600 flex-shrink-0"
                     >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M6 18L18 6M6 6l12 12"
-                      />
-                    </svg>
-                  </button>
-                </>
-              ) : (
-                <>
-                  <span className="flex-1 text-xs sm:text-sm text-gray-900 truncate">
-                    {config.displayName(item)}
-                  </span>
-                  <button
-                    onClick={() => onStartEdit(item)}
-                    className="opacity-0 group-hover:opacity-100 text-blue-600 hover:text-blue-700 transition-opacity flex-shrink-0"
-                  >
-                    <svg
-                      className="w-3.5 h-3.5 sm:w-4 sm:h-4"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
+                      <svg
+                        className="w-3.5 h-3.5 sm:w-4 sm:h-4"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M6 18L18 6M6 6l12 12"
+                        />
+                      </svg>
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span className="flex-1 text-xs sm:text-sm font-medium text-gray-900 truncate">
+                      {config.displayName(item)}
+                    </span>
+                    <button
+                      onClick={() => onStartEdit(item)}
+                      className="opacity-0 group-hover:opacity-100 text-blue-600 hover:text-blue-700 transition-opacity flex-shrink-0"
                     >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                      />
-                    </svg>
-                  </button>
-                  <button
-                    onClick={() => onDelete(item.id)}
-                    className="opacity-0 group-hover:opacity-100 text-red-600 hover:text-red-700 transition-opacity flex-shrink-0"
-                  >
-                    <svg
-                      className="w-3.5 h-3.5 sm:w-4 sm:h-4"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
+                      <svg
+                        className="w-3.5 h-3.5 sm:w-4 sm:h-4"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                        />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => onDelete(item.id)}
+                      className="opacity-0 group-hover:opacity-100 text-red-600 hover:text-red-700 transition-opacity flex-shrink-0"
                     >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                      />
-                    </svg>
-                  </button>
-                </>
+                      <svg
+                        className="w-3.5 h-3.5 sm:w-4 sm:h-4"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                        />
+                      </svg>
+                    </button>
+                  </>
+                )}
+              </div>
+
+              {/* Show children for parents */}
+              {type === "parents" && (item as any).children && (item as any).children.length > 0 && (
+                <div className="mt-2 ml-3 pl-3 border-l-2 border-gray-300">
+                  <p className="text-xs text-gray-600 font-semibold mb-1">Children:</p>
+                  <div className="space-y-1">
+                    {(item as any).children.map((child: any) => (
+                      <div key={child.member_id} className="text-xs text-gray-700">
+                        {`${child.first_name || ''} ${child.last_name || ''}`.trim() || 'Unnamed'}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {type === "parents" && (!((item as any).children) || (item as any).children.length === 0) && (
+                <div className="mt-2 ml-3 pl-3 border-l-2 border-gray-300">
+                  <p className="text-xs text-gray-500 italic">No children linked</p>
+                </div>
               )}
             </div>
           ))}
@@ -430,7 +512,7 @@ export default function AdminDashboard() {
   const router = useRouter();
   const [userName, setUserName] = useState("Admin User");
   const [userEmail, setUserEmail] = useState("");
-  const [activeTab, setActiveTab] = useState<Tab>("roster");
+  const [activeTab, setActiveTab] = useState<Tab>("assignments");
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -440,11 +522,26 @@ export default function AdminDashboard() {
   const [adminsLoading, setAdminsLoading] = useState(false);
   const [promotingAdmin, setPromotingAdmin] = useState(false);
   const [demotingAdmin, setDemotingAdmin] = useState<string | null>(null);
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [demoteConfirmDialog, setDemoteConfirmDialog] = useState<{
     show: boolean;
     personId: string | null;
     personName: string;
   }>({ show: false, personId: null, personName: "" });
+  const [entityDeleteDialog, setEntityDeleteDialog] = useState<{
+    show: boolean;
+    type: EntityType | null;
+    entityId: string | null;
+    entityLabel: string;
+  }>({ show: false, type: null, entityId: null, entityLabel: "" });
+
+  const showToast = (message: string, type: "success" | "error" = "error") => {
+    const id = Date.now() + Math.floor(Math.random() * 1000);
+    setToasts((prev) => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((toast) => toast.id !== id));
+    }, 3500);
+  };
 
   // Single generic state object manages all 5 entity types
   // Structure: { skills: {...}, instructors: {...}, swimmers: {...}, parents: {...}, classes: {...} }
@@ -656,7 +753,10 @@ export default function AdminDashboard() {
       await fetchAdmins();
     } catch (err) {
       console.error("Error promoting admin:", err);
-      alert("Failed to promote admin");
+      showToast(
+        err instanceof Error ? err.message : "Failed to promote admin",
+        "error",
+      );
     } finally {
       setPromotingAdmin(false);
     }
@@ -687,9 +787,13 @@ export default function AdminDashboard() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Failed to demote admin");
       await fetchAdmins();
+      showToast("Admin demoted successfully", "success");
     } catch (err) {
       console.error("Error demoting admin:", err);
-      alert(err instanceof Error ? err.message : "Failed to demote admin");
+      showToast(
+        err instanceof Error ? err.message : "Failed to demote admin",
+        "error",
+      );
     } finally {
       setDemotingAdmin(null);
     }
@@ -747,7 +851,7 @@ export default function AdminDashboard() {
       await fetchEntity(type);
     } catch (err) {
       console.error(`Error adding ${type}:`, err);
-      alert(`Failed to add ${ENTITY_CONFIG[type].singularLabel}`);
+      showToast(`Failed to add ${ENTITY_CONFIG[type].singularLabel}`, "error");
     }
   };
 
@@ -772,29 +876,52 @@ export default function AdminDashboard() {
         [type]: { ...prev[type], editingId: null, editingName: "" },
       }));
       await fetchEntity(type);
+      showToast(`${ENTITY_CONFIG[type].singularLabel} updated`, "success");
     } catch (err) {
       console.error(`Error updating ${type}:`, err);
-      alert(`Failed to update ${ENTITY_CONFIG[type].singularLabel}`);
+      showToast(`Failed to update ${ENTITY_CONFIG[type].singularLabel}`, "error");
     }
   };
 
-  // Delete entity with confirmation. Refreshes list after deletion.
-  const handleDelete = async (type: EntityType, id: string) => {
-    if (!userEmail) return;
-    if (!confirm(`Delete this ${ENTITY_CONFIG[type].singularLabel}?`)) return;
+  const requestDeleteEntity = (type: EntityType, id: string) => {
+    const entity = entities[type].list.find((item) => item.id === id);
+    const label = entity
+      ? ENTITY_CONFIG[type].displayName(entity)
+      : ENTITY_CONFIG[type].singularLabel;
+    setEntityDeleteDialog({
+      show: true,
+      type,
+      entityId: id,
+      entityLabel: label,
+    });
+  };
+
+  // Delete entity after right-side confirmation.
+  const handleDeleteConfirmed = async () => {
+    const { type, entityId } = entityDeleteDialog;
+    if (!userEmail || !type || !entityId) return;
+
+    setEntityDeleteDialog({
+      show: false,
+      type: null,
+      entityId: null,
+      entityLabel: "",
+    });
+
     try {
       const config = ENTITY_CONFIG[type];
       const response = await fetch(
-        `${config.apiPath}?email=${encodeURIComponent(userEmail)}&${config.idField}=${id}`,
+        `${config.apiPath}?email=${encodeURIComponent(userEmail)}&${config.idField}=${entityId}`,
         {
           method: "DELETE",
         },
       );
       if (!response.ok) throw new Error(`Failed to delete ${type}`);
       await fetchEntity(type);
+      showToast(`${ENTITY_CONFIG[type].singularLabel} deleted`, "success");
     } catch (err) {
       console.error(`Error deleting ${type}:`, err);
-      alert(`Failed to delete ${ENTITY_CONFIG[type].singularLabel}`);
+      showToast(`Failed to delete ${ENTITY_CONFIG[type].singularLabel}`, "error");
     }
   };
 
@@ -939,11 +1066,10 @@ export default function AdminDashboard() {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg text-xs sm:text-sm font-medium transition-all duration-200 whitespace-nowrap ${
-                activeTab === tab.id
-                  ? "bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/30 hover:shadow-xl hover:shadow-blue-500/40 hover:from-blue-600 hover:to-blue-700 transform hover:-translate-y-0.5"
-                  : "bg-white text-gray-700 border border-gray-200 hover:border-blue-300 hover:shadow-md hover:bg-blue-50 shadow-sm"
-              }`}
+              className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg text-xs sm:text-sm font-medium transition-all duration-200 whitespace-nowrap ${activeTab === tab.id
+                ? "bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/30 hover:shadow-xl hover:shadow-blue-500/40 hover:from-blue-600 hover:to-blue-700 transform hover:-translate-y-0.5"
+                : "bg-white text-gray-700 border border-gray-200 hover:border-blue-300 hover:shadow-md hover:bg-blue-50 shadow-sm"
+                }`}
             >
               <span className="[&>svg]:w-3.5 [&>svg]:h-3.5 sm:[&>svg]:w-4 sm:[&>svg]:h-4">
                 {tab.icon}
@@ -1051,47 +1177,41 @@ export default function AdminDashboard() {
               )}
             </div>
 
-            {/* Demote Confirmation Dialog */}
+            {/* Right-side demote confirmation */}
             {demoteConfirmDialog.show && (
-              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                    Demote Admin
-                  </h3>
-                  <p className="text-sm text-gray-600 mb-4">
-                    Are you sure you want to demote{" "}
-                    <strong>{demoteConfirmDialog.personName}</strong> from
-                    admin? They will keep their instructor permissions but lose
-                    admin access.
-                  </p>
-                  <div className="flex gap-3 justify-end">
-                    <button
-                      onClick={() =>
-                        setDemoteConfirmDialog({
-                          show: false,
-                          personId: null,
-                          personName: "",
-                        })
-                      }
-                      className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleDemoteAdmin}
-                      className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition"
-                    >
-                      Demote
-                    </button>
-                  </div>
+              <div className="fixed top-20 right-4 z-[101] w-[92vw] max-w-sm rounded-xl border border-gray-200 bg-white shadow-2xl p-4">
+                <p className="text-sm font-semibold text-gray-900">Demote Admin</p>
+                <p className="mt-1 text-xs sm:text-sm text-gray-600">
+                  Demote <span className="font-medium">{demoteConfirmDialog.personName}</span>?
+                  They will keep instructor permissions but lose admin access.
+                </p>
+                <div className="mt-3 flex justify-end gap-2">
+                  <button
+                    onClick={() =>
+                      setDemoteConfirmDialog({
+                        show: false,
+                        personId: null,
+                        personName: "",
+                      })
+                    }
+                    className="px-3 py-1.5 text-xs sm:text-sm text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleDemoteAdmin}
+                    className="px-3 py-1.5 text-xs sm:text-sm text-white bg-red-600 rounded-md hover:bg-red-700"
+                  >
+                    Demote
+                  </button>
                 </div>
               </div>
             )}
           </div>
         )}
 
-        {/* Instructors Tab - Custom Manager */}
-        {activeTab === "instructors" && (
+        {/* Instructors Tab - kept mounted for instant tab switching */}
+        <div className={activeTab === "instructors" ? "" : "hidden"}>
           <InstructorManager
             userEmail={userEmail}
             onRefresh={() => {
@@ -1099,10 +1219,10 @@ export default function AdminDashboard() {
               fetchEntity("instructors");
             }}
           />
-        )}
+        </div>
 
-        {/* Classes Tab - Custom Manager */}
-        {activeTab === "classes" && (
+        {/* Classes Tab - kept mounted for instant tab switching */}
+        <div className={activeTab === "classes" ? "" : "hidden"}>
           <ClassManager
             userEmail={userEmail}
             onRefresh={() => {
@@ -1110,19 +1230,27 @@ export default function AdminDashboard() {
               fetchEntity("classes");
             }}
           />
-        )}
+        </div>
+
+        {/* Instructor Assignments Tab - kept mounted for instant tab switching */}
+        <div className={activeTab === "assignments" ? "" : "hidden"}>
+          <InstructorAssignmentManager
+            userEmail={userEmail}
+          />
+        </div>
 
         {/* All other entity tabs use the generic EntityEditor component */}
         {activeTab !== "roster" &&
           activeTab !== "admins" &&
           activeTab !== "instructors" &&
-          activeTab !== "classes" && (
+          activeTab !== "classes" &&
+          activeTab !== "assignments" && (
             <EntityEditor
               type={activeTab as EntityType}
               state={entities[activeTab as EntityType]}
               onAdd={() => handleAdd(activeTab as EntityType)}
               onUpdate={(id) => handleUpdate(activeTab as EntityType, id)}
-              onDelete={(id) => handleDelete(activeTab as EntityType, id)}
+              onDelete={(id) => requestDeleteEntity(activeTab as EntityType, id)}
               onStartEdit={(item) =>
                 setEntities((prev) => ({
                   ...prev,
@@ -1164,6 +1292,52 @@ export default function AdminDashboard() {
               }
             />
           )}
+
+        {/* Right-side toast notifications */}
+        <div className="fixed top-4 right-4 z-[100] space-y-2 w-[92vw] max-w-sm pointer-events-none">
+          {toasts.map((toast) => (
+            <div
+              key={toast.id}
+              className={`pointer-events-auto rounded-lg border px-3 py-2 shadow-lg text-xs sm:text-sm ${toast.type === "success"
+                ? "bg-green-50 border-green-200 text-green-800"
+                : "bg-red-50 border-red-200 text-red-800"
+                }`}
+            >
+              {toast.message}
+            </div>
+          ))}
+        </div>
+
+        {/* Right-side delete confirmation */}
+        {entityDeleteDialog.show && (
+          <div className="fixed top-20 right-4 z-[101] w-[92vw] max-w-sm rounded-xl border border-gray-200 bg-white shadow-2xl p-4">
+            <p className="text-sm font-semibold text-gray-900">Confirm Delete</p>
+            <p className="mt-1 text-xs sm:text-sm text-gray-600 break-words">
+              Delete <span className="font-medium">{entityDeleteDialog.entityLabel}</span>?
+            </p>
+            <div className="mt-3 flex justify-end gap-2">
+              <button
+                onClick={() =>
+                  setEntityDeleteDialog({
+                    show: false,
+                    type: null,
+                    entityId: null,
+                    entityLabel: "",
+                  })
+                }
+                className="px-3 py-1.5 text-xs sm:text-sm text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteConfirmed}
+                className="px-3 py-1.5 text-xs sm:text-sm text-white bg-red-600 rounded-md hover:bg-red-700"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );

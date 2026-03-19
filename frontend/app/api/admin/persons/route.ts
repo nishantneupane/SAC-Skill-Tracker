@@ -16,7 +16,10 @@ export async function GET(request: NextRequest) {
         const supabase = getSupabaseAdminClient();
         const orgId = await getOrgIdByEmail(supabase, email);
 
-        if (!orgId) return NextResponse.json({ error: 'Failed to find organization' }, { status: 500 });
+        // Be resilient: if user has no organization context, return an empty list instead of 500.
+        if (!orgId) {
+            return NextResponse.json({ persons: [] });
+        }
 
         // Get all members (swimmers/students) for this org
         const { data: members, error: membersError } = await supabase
@@ -32,30 +35,42 @@ export async function GET(request: NextRequest) {
         if (memberIds.length === 0) return NextResponse.json({ persons: [] });
 
         // Find existing member -> person links.
-        const { data: memberLinks, error: linksError } = await supabase
-            .from('person_member')
-            .select('member_id, person_id')
-            .in('member_id', memberIds);
+        const chunkSize = 200;
+        const memberLinks: Array<{ member_id: string; person_id: string }> = [];
+        for (let i = 0; i < memberIds.length; i += chunkSize) {
+            const memberIdChunk = memberIds.slice(i, i + chunkSize);
+            const { data: linksChunk, error: linksError } = await supabase
+                .from('person_member')
+                .select('member_id, person_id')
+                .in('member_id', memberIdChunk);
 
-        if (linksError) {
-            return NextResponse.json({ error: 'Failed to load member links: ' + linksError.message }, { status: 500 });
+            if (linksError) {
+                console.warn('Persons GET: failed to load some member links:', linksError.message);
+                continue;
+            }
+
+            memberLinks.push(...((linksChunk || []) as Array<{ member_id: string; person_id: string }>));
         }
 
         const linkedPersonIds = Array.from(new Set((memberLinks || []).map((l) => l.person_id)));
         const personMap = new Map<string, { person_id: string; first_name: string | null; last_name: string | null; email: string | null }>();
 
         if (linkedPersonIds.length > 0) {
-            const { data: linkedPeople, error: peopleError } = await supabase
-                .from('person')
-                .select('person_id, first_name, last_name, email')
-                .in('person_id', linkedPersonIds);
+            for (let i = 0; i < linkedPersonIds.length; i += chunkSize) {
+                const personIdChunk = linkedPersonIds.slice(i, i + chunkSize);
+                const { data: linkedPeople, error: peopleError } = await supabase
+                    .from('person')
+                    .select('person_id, first_name, last_name, email')
+                    .in('person_id', personIdChunk);
 
-            if (peopleError) {
-                return NextResponse.json({ error: 'Failed to load linked people: ' + peopleError.message }, { status: 500 });
-            }
+                if (peopleError) {
+                    console.warn('Persons GET: failed to load some linked people:', peopleError.message);
+                    continue;
+                }
 
-            for (const person of linkedPeople || []) {
-                personMap.set(person.person_id, person);
+                for (const person of linkedPeople || []) {
+                    personMap.set(person.person_id, person);
+                }
             }
         }
 
@@ -64,7 +79,7 @@ export async function GET(request: NextRequest) {
             linkByMemberId.set(link.member_id, link.person_id);
         }
 
-        const persons = [...(members || [])]
+        let persons = [...(members || [])]
             .map((member: any) => {
                 const linkedPersonId = linkByMemberId.get(member.member_id) || null;
                 const linkedPerson = linkedPersonId ? personMap.get(linkedPersonId) : null;

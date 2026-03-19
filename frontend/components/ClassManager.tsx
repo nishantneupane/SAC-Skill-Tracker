@@ -23,22 +23,7 @@ interface ClassManagerProps {
 
 export default function ClassManager({ userEmail, onRefresh }: ClassManagerProps) {
     const [loading, setLoading] = useState(false);
-    const [submitting, setSubmitting] = useState(false);
     const [classes, setClasses] = useState<Class[]>([]);
-    const [selectedCsvFile, setSelectedCsvFile] = useState<File | null>(null);
-    const [csvUploading, setCsvUploading] = useState(false);
-    const [csvErrors, setCsvErrors] = useState<string[]>([]);
-    const [csvSummary, setCsvSummary] = useState<{
-        insertedClasses: number;
-        updatedClasses: number;
-        totalProcessed: number;
-        skippedRows: number;
-    } | null>(null);
-
-    // New class form state
-    const [newName, setNewName] = useState('');
-    const [newSchedule, setNewSchedule] = useState('');
-    const [newLengthMinutes, setNewLengthMinutes] = useState('');
 
     // Editing state
     const [editingId, setEditingId] = useState<string | null>(null);
@@ -46,9 +31,8 @@ export default function ClassManager({ userEmail, onRefresh }: ClassManagerProps
     const [editingSchedule, setEditingSchedule] = useState('');
     const [editingLengthMinutes, setEditingLengthMinutes] = useState('');
 
-    const [successMessage, setSuccessMessage] = useState<string | null>(null);
-    const [errorMessage, setErrorMessage] = useState<string | null>(null);
-    const [confirmDialog, setConfirmDialog] = useState<{ show: boolean; classId: string | null; className: string }>({ show: false, classId: null, className: '' });
+    const [toasts, setToasts] = useState<Array<{ id: number; message: string; type: 'success' | 'error' }>>([]);
+    const [deleteDialog, setDeleteDialog] = useState<{ show: boolean; classId: string | null; className: string }>({ show: false, classId: null, className: '' });
 
     // Fetch classes
     const fetchClasses = async () => {
@@ -72,132 +56,15 @@ export default function ClassManager({ userEmail, onRefresh }: ClassManagerProps
         }
     }, [userEmail]);
 
-    // Show success message temporarily
-    const showSuccess = (message: string) => {
-        setSuccessMessage(message);
-        setTimeout(() => setSuccessMessage(null), 3000);
+    const showToast = (message: string, type: 'success' | 'error' = 'error') => {
+        const id = Date.now() + Math.floor(Math.random() * 1000);
+        setToasts((prev) => [...prev, { id, message, type }]);
+        setTimeout(() => {
+            setToasts((prev) => prev.filter((toast) => toast.id !== id));
+        }, 3500);
     };
 
-    // Show error message temporarily
-    const showError = (message: string) => {
-        setErrorMessage(message);
-        setTimeout(() => setErrorMessage(null), 5000);
-    };
 
-    const handleCsvFileSelect = (file: File | null) => {
-        if (!file) return;
-
-        const isCsvType =
-            file.type === 'text/csv' ||
-            file.type === 'application/vnd.ms-excel' ||
-            file.name.toLowerCase().endsWith('.csv');
-
-        if (!isCsvType) {
-            setCsvErrors(['Please select a CSV file.']);
-            setSelectedCsvFile(null);
-            return;
-        }
-
-        setSelectedCsvFile(file);
-        setCsvErrors([]);
-        setCsvSummary(null);
-    };
-
-    const handleUploadCsv = async () => {
-        if (!selectedCsvFile || !userEmail || csvUploading) return;
-
-        setCsvUploading(true);
-        setCsvErrors([]);
-
-        try {
-            const formData = new FormData();
-            formData.append('file', selectedCsvFile);
-            formData.append('email', userEmail);
-
-            const response = await fetch('/api/admin/import-classes', {
-                method: 'POST',
-                body: formData,
-            });
-
-            const data = await response.json();
-
-            if (!response.ok) {
-                if (Array.isArray(data.errors) && data.errors.length > 0) {
-                    setCsvErrors(data.errors);
-                } else {
-                    setCsvErrors([data.error || 'Failed to import classes CSV']);
-                }
-                return;
-            }
-
-            setCsvSummary({
-                insertedClasses: data.insertedClasses ?? 0,
-                updatedClasses: data.updatedClasses ?? 0,
-                totalProcessed: data.totalProcessed ?? 0,
-                skippedRows: data.skippedRows ?? 0,
-            });
-            setSelectedCsvFile(null);
-            showSuccess('Classes CSV imported successfully');
-            await fetchClasses();
-            onRefresh();
-        } catch (error) {
-            console.error('Failed to import classes CSV:', error);
-            setCsvErrors([
-                error instanceof Error
-                    ? error.message
-                    : 'Unexpected error while importing classes CSV',
-            ]);
-        } finally {
-            setCsvUploading(false);
-        }
-    };
-
-    // Add new class
-    const handleAdd = async () => {
-        if (!newName.trim()) {
-            showError('Class name is required');
-            return;
-        }
-
-        if (newLengthMinutes && parseInt(newLengthMinutes) <= 0) {
-            showError('Length must be a positive number');
-            return;
-        }
-
-        if (submitting) return; // Prevent double submission
-        setSubmitting(true);
-
-        try {
-            const response = await fetch('/api/admin/classes', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    admin_email: userEmail,
-                    name: newName.trim(),
-                    schedule: newSchedule.trim() || null,
-                    length_minutes: newLengthMinutes ? parseInt(newLengthMinutes) : null,
-                }),
-            });
-
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error(data.error || 'Failed to create class');
-            }
-
-            setNewName('');
-            setNewSchedule('');
-            setNewLengthMinutes('');
-            showSuccess('Class created successfully');
-            await fetchClasses();
-            onRefresh();
-        } catch (error) {
-            console.error('Failed to create class:', error);
-            showError(error instanceof Error ? error.message : 'Failed to create class');
-        } finally {
-            setSubmitting(false);
-        }
-    };
 
     // Start editing a class
     const startEdit = (classItem: Class) => {
@@ -218,12 +85,12 @@ export default function ClassManager({ userEmail, onRefresh }: ClassManagerProps
     // Save edited class
     const saveEdit = async (class_id: string) => {
         if (!editingName.trim()) {
-            showError('Class name is required');
+            showToast('Class name is required', 'error');
             return;
         }
 
         if (editingLengthMinutes && parseInt(editingLengthMinutes) <= 0) {
-            showError('Length must be a positive number');
+            showToast('Length must be a positive number', 'error');
             return;
         }
 
@@ -247,26 +114,26 @@ export default function ClassManager({ userEmail, onRefresh }: ClassManagerProps
             }
 
             cancelEdit();
-            showSuccess('Class updated successfully');
+            showToast('Class updated successfully', 'success');
             await fetchClasses();
             onRefresh();
         } catch (error) {
             console.error('Failed to update class:', error);
-            showError(error instanceof Error ? error.message : 'Failed to update class');
+            showToast(error instanceof Error ? error.message : 'Failed to update class', 'error');
         }
     };
 
     // Confirm delete
     const confirmDelete = (class_id: string, className: string) => {
-        setConfirmDialog({ show: true, classId: class_id, className });
+        setDeleteDialog({ show: true, classId: class_id, className });
     };
 
     // Delete class
     const handleDelete = async () => {
-        const class_id = confirmDialog.classId;
+        const class_id = deleteDialog.classId;
         if (!class_id) return;
 
-        setConfirmDialog({ show: false, classId: null, className: '' });
+        setDeleteDialog({ show: false, classId: null, className: '' });
 
         try {
             const response = await fetch(
@@ -280,132 +147,18 @@ export default function ClassManager({ userEmail, onRefresh }: ClassManagerProps
                 throw new Error(data.error || 'Failed to delete class');
             }
 
-            showSuccess('Class deleted successfully');
+            showToast('Class deleted successfully', 'success');
             await fetchClasses();
             onRefresh();
         } catch (error) {
             console.error('Failed to delete class:', error);
-            showError(error instanceof Error ? error.message : 'Failed to delete class');
+            showToast(error instanceof Error ? error.message : 'Failed to delete class', 'error');
         }
     };
 
     return (
         <div className="bg-white rounded-lg sm:rounded-xl border border-gray-200 shadow-sm p-4 sm:p-6">
             <p className="text-xs sm:text-sm font-semibold text-gray-900 mb-3 sm:mb-4">Manage Classes</p>
-
-            {/* Success Message */}
-            {successMessage && (
-                <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
-                    <p className="text-xs sm:text-sm text-green-800">{successMessage}</p>
-                </div>
-            )}
-
-            {/* Error Message */}
-            {errorMessage && (
-                <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-                    <p className="text-xs sm:text-sm text-red-800">{errorMessage}</p>
-                </div>
-            )}
-
-            {/* Add New Class Form */}
-            <div className="border border-gray-200 rounded-lg p-3 sm:p-4 mb-4 bg-gray-50/60">
-                <p className="text-xs font-medium text-gray-700 mb-2">Upload Classes (CSV)</p>
-                <p className="text-[11px] sm:text-xs text-gray-500 mb-3">
-                    Required column: <span className="font-medium">name</span>. Optional columns: <span className="font-medium">schedule</span>, <span className="font-medium">length_minutes</span>.
-                </p>
-
-                <input
-                    type="file"
-                    accept=".csv,text/csv"
-                    className="hidden"
-                    id="classesCsvUpload"
-                    onChange={(e) => handleCsvFileSelect(e.target.files?.[0] ?? null)}
-                />
-
-                <div className="flex flex-wrap gap-2 items-center">
-                    <label
-                        htmlFor="classesCsvUpload"
-                        className={`cursor-pointer px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg border text-xs sm:text-sm font-medium transition ${csvUploading
-                            ? 'border-gray-200 bg-gray-200 text-gray-400 cursor-not-allowed pointer-events-none'
-                            : 'border-gray-300 text-gray-700 hover:bg-gray-100'
-                            }`}
-                    >
-                        Choose CSV
-                    </label>
-                    <button
-                        onClick={handleUploadCsv}
-                        disabled={!selectedCsvFile || csvUploading}
-                        className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition ${selectedCsvFile && !csvUploading
-                            ? 'bg-black text-white hover:opacity-90'
-                            : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                            }`}
-                    >
-                        {csvUploading ? 'Uploading...' : 'Upload Classes'}
-                    </button>
-                </div>
-
-                {selectedCsvFile && (
-                    <p className="mt-2 text-xs text-gray-500">Selected: {selectedCsvFile.name}</p>
-                )}
-
-                {csvSummary && (
-                    <div className="mt-3 text-xs sm:text-sm text-green-700 space-y-1">
-                        <p>Inserted: {csvSummary.insertedClasses}</p>
-                        <p>Updated: {csvSummary.updatedClasses}</p>
-                        <p>Processed rows: {csvSummary.totalProcessed}</p>
-                        {csvSummary.skippedRows > 0 && (
-                            <p>Skipped rows: {csvSummary.skippedRows}</p>
-                        )}
-                    </div>
-                )}
-
-                {csvErrors.length > 0 && (
-                    <div className="mt-3 text-xs sm:text-sm text-red-700 space-y-1">
-                        {csvErrors.map((msg, index) => (
-                            <p key={`${msg}-${index}`}>{msg}</p>
-                        ))}
-                    </div>
-                )}
-            </div>
-
-            {/* Add New Class Form */}
-            <div className="border border-gray-200 rounded-lg p-3 sm:p-4 mb-4">
-                <p className="text-xs font-medium text-gray-700 mb-2">Add New Class</p>
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
-                    <input
-                        type="text"
-                        value={newName}
-                        onChange={(e) => setNewName(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
-                        placeholder="Class name*"
-                        className="px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                    />
-                    <input
-                        type="text"
-                        value={newSchedule}
-                        onChange={(e) => setNewSchedule(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
-                        placeholder="Schedule (optional)"
-                        className="px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                    />
-                    <input
-                        type="number"
-                        value={newLengthMinutes}
-                        onChange={(e) => setNewLengthMinutes(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
-                        placeholder="Length (min)"
-                        min="1"
-                        className="px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                    />
-                    <button
-                        onClick={handleAdd}
-                        disabled={!newName.trim() || submitting}
-                        className="px-3 sm:px-4 py-1.5 sm:py-2 bg-blue-600 text-white text-xs sm:text-sm rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition whitespace-nowrap"
-                    >
-                        {submitting ? 'Adding...' : 'Add Class'}
-                    </button>
-                </div>
-            </div>
 
             {/* Classes List */}
             {loading ? (
@@ -414,7 +167,7 @@ export default function ClassManager({ userEmail, onRefresh }: ClassManagerProps
                 </div>
             ) : classes.length === 0 ? (
                 <p className="text-xs sm:text-sm text-gray-500 text-center py-3 sm:py-4">
-                    No classes yet. Add one above!
+                    No classes yet. Classes are managed by administrators.
                 </p>
             ) : (
                 <div className="space-y-2">
@@ -559,28 +312,41 @@ export default function ClassManager({ userEmail, onRefresh }: ClassManagerProps
                 </div>
             )}
 
-            {/* Confirmation Dialog */}
-            {confirmDialog.show && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
-                        <h3 className="text-lg font-semibold text-gray-900 mb-2">Delete Class</h3>
-                        <p className="text-sm text-gray-600 mb-4">
-                            Are you sure you want to delete <strong>{confirmDialog.className}</strong>? This will remove all instructor assignments.
-                        </p>
-                        <div className="flex gap-3 justify-end">
-                            <button
-                                onClick={() => setConfirmDialog({ show: false, classId: null, className: '' })}
-                                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                onClick={handleDelete}
-                                className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition"
-                            >
-                                Delete
-                            </button>
-                        </div>
+            {/* Right-side toast notifications */}
+            <div className="fixed top-4 right-4 z-[100] space-y-2 w-[92vw] max-w-sm pointer-events-none">
+                {toasts.map((toast) => (
+                    <div
+                        key={toast.id}
+                        className={`pointer-events-auto rounded-lg border px-3 py-2 shadow-lg text-xs sm:text-sm ${toast.type === 'success'
+                                ? 'bg-green-50 border-green-200 text-green-800'
+                                : 'bg-red-50 border-red-200 text-red-800'
+                            }`}
+                    >
+                        {toast.message}
+                    </div>
+                ))}
+            </div>
+
+            {/* Right-side delete confirmation */}
+            {deleteDialog.show && (
+                <div className="fixed top-20 right-4 z-[101] w-[92vw] max-w-sm rounded-xl border border-gray-200 bg-white shadow-2xl p-4">
+                    <p className="text-sm font-semibold text-gray-900">Confirm Delete</p>
+                    <p className="mt-1 text-xs sm:text-sm text-gray-600">
+                        Delete <span className="font-medium">{deleteDialog.className}</span>? This will remove all instructor assignments.
+                    </p>
+                    <div className="mt-3 flex justify-end gap-2">
+                        <button
+                            onClick={() => setDeleteDialog({ show: false, classId: null, className: '' })}
+                            className="px-3 py-1.5 text-xs sm:text-sm text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            onClick={handleDelete}
+                            className="px-3 py-1.5 text-xs sm:text-sm text-white bg-red-600 rounded-md hover:bg-red-700"
+                        >
+                            Delete
+                        </button>
                     </div>
                 </div>
             )}

@@ -51,14 +51,10 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Step 4: Get total members in this organization
-    const {
-      data: membersData,
-      count: membersCount,
-      error: membersError,
-    } = await supabase
+    // Step 4: Get total members in this organization (deduplicated by name)
+    const { data: membersData, error: membersError } = await supabase
       .from("member")
-      .select("member_id", { count: "exact", head: false })
+      .select("first_name, last_name")
       .eq("organization_id", organizationId);
 
     if (membersError) {
@@ -68,7 +64,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const totalMembers = membersCount || 0;
+    const totalMembers = (membersData || []).length;
 
     // Step 5: Get total instructors in this organization
     const instructorRoleId = await getRoleIdByName(supabase, "instructor");

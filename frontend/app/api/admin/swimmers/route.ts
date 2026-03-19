@@ -40,17 +40,14 @@ export async function GET(request: NextRequest) {
             );
         }
 
-        // TODO: Frontend currently expects person_id for swimmers.
-        const swimmers = [...(members || [])]
+        // Return all members; dedupe by member_id at UI layer if needed.
+        const swimmers = (members || [])
+            .map((member: any) => ({ ...member, person_id: member.member_id }))
             .sort((a: any, b: any) => {
                 const aName = `${a.first_name || ''} ${a.last_name || ''}`.trim().toLowerCase();
                 const bName = `${b.first_name || ''} ${b.last_name || ''}`.trim().toLowerCase();
                 return aName.localeCompare(bName);
-            })
-            .map((member: any) => ({
-                ...member,
-                person_id: member.member_id,
-            }));
+            });
 
         return NextResponse.json({ swimmers });
     } catch (error) {
