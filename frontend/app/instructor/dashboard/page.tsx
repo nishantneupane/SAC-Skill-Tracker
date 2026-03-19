@@ -7,7 +7,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import InstructorClassView from './instructorClassView';
+import EvaluationForm from '@/components/EvaluationForm';
 
 interface InstructorClass {
   id: string;
@@ -45,8 +45,8 @@ interface DashboardPayload {
   swimmers: RosterSwimmerCard[];
   skillsBySwimmer: Record<string, SkillItem[]>;
   notes: NoteItem[];
-  error?: string;
-} 
+  error?: string; 
+}
 
 function getInitials(name: string) {
   return name
@@ -66,9 +66,9 @@ export default function InstructorDashboard() {
   const router = useRouter();
   const [userName, setUserName] = useState('Guest User');
   const [organizationName, setOrganizationName] = useState('SAC Skill Tracker');
-  const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
+  const [openSwimmerId, setOpenSwimmerId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
-  const [todayClasses, setTodayClasses] = useState<InstructorClass[]>([]);
   const [swimmers, setSwimmers] = useState<RosterSwimmerCard[]>([]);
   const [skillsBySwimmer, setSkillsBySwimmer] = useState<Record<string, SkillItem[]>>({});
   const [notes, setNotes] = useState<NoteItem[]>([]);
@@ -109,7 +109,6 @@ export default function InstructorDashboard() {
 
         setUserName(payload.userName || localName);
         setOrganizationName(payload.organizationName || 'SAC Skill Tracker');
-        setTodayClasses(payload.classes ?? []);
         setSwimmers(payload.swimmers ?? []);
         setSkillsBySwimmer(payload.skillsBySwimmer ?? {});
         setNotes(payload.notes ?? []);
@@ -120,7 +119,6 @@ export default function InstructorDashboard() {
           fetchError instanceof Error ? fetchError.message : 'Unexpected error loading dashboard.';
 
         setError(message);
-        setTodayClasses([]);
         setSwimmers([]);
         setSkillsBySwimmer({});
         setNotes([]);
@@ -138,22 +136,6 @@ export default function InstructorDashboard() {
     };
   }, []);
 
-  const swimmersByClass = useMemo(() => {
-    const byClass: Record<string, RosterSwimmerCard[]> = {};
-    swimmers.forEach((swimmer) => {
-      swimmer.classIds.forEach((classId) => {
-        if (!byClass[classId]) byClass[classId] = [];
-        byClass[classId].push(swimmer);
-      });
-    });
-    return byClass;
-  }, [swimmers]);
-
-  const selectedClass = useMemo(
-    () => todayClasses.find((cls) => cls.id === selectedClassId) ?? null,
-    [todayClasses, selectedClassId]
-  );
-
   const visibleSwimmers = useMemo(() => {
     const deduped = new Map<string, RosterSwimmerCard>();
     swimmers.forEach((swimmer) => {
@@ -161,19 +143,21 @@ export default function InstructorDashboard() {
         deduped.set(swimmer.id, swimmer);
       }
     });
-    return Array.from(deduped.values());
-  }, [swimmers]);
+    
+    const allSwimmers = Array.from(deduped.values());
 
-  if (selectedClassId && selectedClass) {
-    return (
-      <InstructorClassView
-        classInfo={selectedClass}
-        swimmers={swimmersByClass[selectedClassId] ?? []}
-        onBack={() => setSelectedClassId(null)}
-        onSwimmerClick={(swimmerId) => router.push(`/instructor/swimmers/${swimmerId}`)}
-      />
+    if (!searchQuery) {
+      return allSwimmers;
+    }
+
+    return allSwimmers.filter(swimmer =>
+      swimmer.name.toLowerCase().includes(searchQuery.toLowerCase())
     );
-  }
+  }, [swimmers, searchQuery]);
+
+  const handleSwimmerClick = (swimmerId: string) => {
+    setOpenSwimmerId(openSwimmerId === swimmerId ? null : swimmerId);
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -244,188 +228,74 @@ export default function InstructorDashboard() {
           </div>
         )}
 
-        <section className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
-          <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 shadow-sm">
-            <div className="px-5 sm:px-6 py-4 sm:py-5 border-b border-gray-100">
-              <h2 className="text-sm font-semibold text-gray-900">
-                Today's Classes{' '}
-                <time className="text-xs text-gray-500">
-                  {new Date().toLocaleDateString('en-US', {
-                    weekday: 'long',
-                    month: 'long',
-                    day: 'numeric',
-                  })}
-                </time>
-              </h2>
-              <p className="text-xs text-gray-500 mt-1">Tap a class to review roster.</p>
-            </div>
-
-            <div className="divide-y divide-gray-100">
-              {todayClasses.map((cls) => (
-                <button
-                  key={cls.id}
-                  className="w-full text-left px-5 sm:px-6 py-4 sm:py-5 hover:bg-gray-50 transition"
-                  onClick={() => setSelectedClassId(cls.id)}
-                >
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-4">
-                      <div className="px-3 py-2 rounded-lg bg-gray-100">
-                        <p className="text-sm font-semibold text-gray-900">{cls.schedule}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold text-gray-900">{cls.name}</p>
-                      </div>
-                    </div>
-                    <span className="inline-flex items-center px-3 py-1 text-xs font-semibold bg-gray-900 text-white rounded-full">
-                      {cls.swimmers} swimmers
-                    </span>
-                  </div>
-                </button>
-              ))}
-
-              {!isLoading && !error && todayClasses.length === 0 && (
-                <div className="px-5 sm:px-6 py-6 sm:py-8 text-center text-sm text-gray-500">No classes assigned yet.</div>
-              )}
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl border border-gray-200 p-5 sm:p-6 shadow-sm">
-            {(() => {
-              const totalSwimmers = visibleSwimmers.length;
-              const totalSkills = visibleSwimmers.reduce(
-                (acc, swimmer) => acc + (skillsBySwimmer[swimmer.id]?.length ?? 0),
-                0
-              );
-              const masteredSkills = visibleSwimmers.reduce(
-                (acc, swimmer) =>
-                  acc + (skillsBySwimmer[swimmer.id]?.filter((skill) => skill.mastered).length ?? 0),
-                0
-              );
-              const pct = formatPct(masteredSkills, totalSkills);
-
-              return (
-                <>
-                  <p className="text-xs font-medium text-gray-500">Overview</p>
-                  <p className="mt-1 text-lg font-semibold text-gray-900">My Roster</p>
-
-                  <div className="mt-4 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-600">Swimmers</span>
-                      <span className="text-sm font-semibold text-gray-900">{totalSwimmers}</span>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-600">Skills Mastered</span>
-                      <span className="text-sm font-semibold text-gray-900">
-                        {masteredSkills}/{totalSkills}
-                      </span>
-                    </div>
-
-                    <div className="pt-2">
-                      <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
-                        <span>Overall mastery</span>
-                        <span>{pct}%</span>
-                      </div>
-                      <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
-                        <div className="h-full bg-gray-900" style={{ width: `${pct}%` }} />
-                      </div>
-                    </div>
-                  </div>
-                </>
-              );
-            })()}
-          </div>
-        </section>
-
         <section>
           <div className="flex items-center justify-between mb-4">
             <span className="inline-flex items-center px-3 py-1 text-xs font-semibold bg-white border border-gray-200 rounded-full">
               My Swimmers
             </span>
+            <div className="w-full max-w-xs">
+              <input
+                type="text"
+                placeholder="Search swimmers..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full px-3 py-2 text-sm text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+          <div className="space-y-4">
             {visibleSwimmers.map((swimmer) => {
               const skills = skillsBySwimmer[swimmer.id] || [];
               const mastered = skills.filter((s) => s.mastered).length;
               const pct = formatPct(mastered, skills.length);
               const shortId = swimmer.id.slice(0, 8);
+              const isOpen = openSwimmerId === swimmer.id;
 
               return (
-                <button
-                  key={swimmer.id}
-                  className="text-left bg-white rounded-xl border border-gray-200 p-5 sm:p-6 shadow-sm hover:border-gray-300 transition"
-                  onClick={() => router.push(`/instructor/swimmers/${swimmer.id}`)}
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-full bg-gray-100 flex items-center justify-center text-sm font-semibold text-gray-700">
-                        {getInitials(swimmer.name)}
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold text-gray-900">{swimmer.name}</p>
-                        <p className="text-xs text-gray-500">{swimmer.level}</p>
-                        <p className="text-xs text-gray-400 mt-1">
-                          Record: {shortId} • {swimmer.classIds.length} class{swimmer.classIds.length === 1 ? '' : 'es'}
-                        </p>
-                        <p className="text-xs text-gray-400 mt-1">Next: {swimmer.nextSession}</p>
-                      </div>
-                    </div>
-
-                    <span className="inline-flex items-center px-3 py-1 text-xs font-semibold bg-gray-900 text-white rounded-full">
-                      {pct}%
-                    </span>
-                  </div>
-
-                  <div className="mt-4">
-                    <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
-                      <span>
-                        Overall Progress ({mastered}/{skills.length} skills)
-                      </span>
-                      <span>{pct}%</span>
-                    </div>
-                    <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
-                      <div className="h-full bg-gray-900" style={{ width: `${pct}%` }} />
-                    </div>
-                    {swimmer.classIds.length === 0 && (
-                      <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mt-2">
-                        No class enrollment is linked to this swimmer for this instructor.
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="mt-4">
-                    <p className="text-xs font-medium text-gray-500 mb-2">Skills</p>
-                    <div className="space-y-1">
-                      {skills.length === 0 && (
-                        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
-                          No skills assigned to this member record yet.
-                        </p>
-                      )}
-
-                      {skills.slice(0, 4).map((skill) => (
-                        <div key={skill.id} className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <span
-                              className={`h-4 w-4 rounded-full flex items-center justify-center text-xs ${skill.mastered ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'
-                                }`}
-                            >
-                              {skill.mastered ? '✓' : '○'}
-                            </span>
-                            <span className="text-xs text-gray-700">{skill.name}</span>
-                          </div>
-                          {skill.mastered && skill.dateAcquired && (
-                            <span className="text-xs text-gray-400">{skill.dateAcquired}</span>
-                          )}
+                <div key={swimmer.id} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                  <button
+                    className="w-full text-left p-5 sm:p-6 hover:bg-gray-50 transition"
+                    onClick={() => handleSwimmerClick(swimmer.id)}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-full bg-gray-100 flex items-center justify-center text-sm font-semibold text-gray-700">
+                          {getInitials(swimmer.name)}
                         </div>
-                      ))}
+                        <div>
+                          <p className="text-sm font-semibold text-gray-900">{swimmer.name}</p>
+                        </div>
+                      </div>
 
-                      {skills.length > 4 && (
-                        <p className="text-xs text-gray-400 pt-1">+ {skills.length - 4} more...</p>
-                      )}
+                      <div className="flex items-center gap-4">
+                     
+                        <svg
+                          className={`w-5 h-5 text-gray-500 transform transition-transform ${isOpen ? 'rotate-180' : ''}`}
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </div>
                     </div>
-                  </div>
-                </button>
+                  </button>
+
+                  {isOpen && (
+                    <div className="p-5 sm:p-6 border-t border-gray-100">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      </div>
+                      <div className="mt-6">
+                        <EvaluationForm
+                          level={Number(swimmer.level)}
+                          swimmerId={swimmer.id}
+                          onSubmissionComplete={() => setOpenSwimmerId(null)}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
               );
             })}
           </div>
@@ -437,45 +307,6 @@ export default function InstructorDashboard() {
           )}
         </section>
 
-        <section>
-          <div className="flex items-center gap-3 mb-4">
-            <span className="inline-flex items-center px-3 py-1 text-xs font-semibold bg-white border border-gray-200 rounded-full">
-              Recent Notes
-            </span>
-          </div>
-
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
-            <div className="px-5 sm:px-6 py-4 sm:py-5 border-b border-gray-100">
-              <h2 className="text-sm font-semibold text-gray-900">Instructor Notes</h2>
-              <p className="text-xs text-gray-500 mt-1">Feedback you have logged across swimmers.</p>
-            </div>
-
-            <div className="divide-y divide-gray-100">
-              {notes.length > 0 ? (
-                notes.map((note) => (
-                  <div key={note.id} className="px-5 sm:px-6 py-4 sm:py-5">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <span className="h-8 w-8 rounded-full bg-gray-800 flex items-center justify-center text-xs font-semibold text-white flex-shrink-0">
-                          {getInitials(note.swimmerName)}
-                        </span>
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold text-gray-900">{note.swimmerName}</p>
-                          <p className="text-xs text-gray-500 mt-0.5">{note.date}</p>
-                        </div>
-                      </div>
-                    </div>
-                    <p className="text-sm text-gray-600 mt-3">{note.note}</p>
-                  </div>
-                ))
-              ) : (
-                <div className="px-5 sm:px-6 py-8 sm:py-10 text-center">
-                  <p className="text-sm text-gray-500">No notes logged yet.</p>
-                </div>
-              )}
-            </div>
-          </div>
-        </section>
       </main>
     </div>
   );

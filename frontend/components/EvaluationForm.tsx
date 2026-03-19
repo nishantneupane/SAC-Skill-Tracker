@@ -71,10 +71,10 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ level, swimmerId, onSub
     };
 
     return (
-        <form onSubmit={handleSubmit} className="space-y-8 p-4 border rounded-lg shadow-md">
-            <h2 className="text-2xl font-bold">{levelName} Skill Evaluation</h2>
+        <form onSubmit={handleSubmit} className="space-y-8 p-4 border rounded-lg shadow-md bg-gray-100">
+            <h2 className="text-2xl font-bold text-center">{levelName} Skill Evaluation</h2>
             {skills.map(skill => (
-                <div key={skill} className="p-4 border rounded-md">
+                <div key={skill} className="p-4 border rounded-md bg-white">
                     <h3 className="text-lg font-semibold">{skill}</h3>
                     <div className="flex items-center space-x-4 mt-2">
                         {proficiencyLevels.map(level => (
@@ -90,7 +90,7 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ level, swimmerId, onSub
                             </label>
                         ))}
                     </div>
-                    <div className="mt-2">
+                    <div className="mt-3 pt-3 border-t border-gray-200 bg-gray-50 rounded-md">
                         <textarea
                             placeholder="Comment"
                             onChange={(e) => handleCommentChange(skill, e.target.value)}
@@ -101,7 +101,7 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ level, swimmerId, onSub
             ))}
 
             {levelName === 'Intermediate' && (
-                 <div className="p-4 border rounded-md">
+                 <div className="p-4 border rounded-md bg-white">
                     <h3 className="text-lg font-semibold">Freestyle swim - distance</h3>
                      <div className="flex items-center space-x-4 mt-2">
                          {[10, 15, 25, 50].map(distance => (
@@ -118,7 +118,7 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ level, swimmerId, onSub
             )}
 
             {levelName === 'Intermediate' && (
-                <div className="p-4 border rounded-md">
+                <div className="p-4 border rounded-md bg-white">
                     <h3 className="text-lg font-semibold">Backstroke swim - distance</h3>
                     <div className="flex items-center space-x-4 mt-2">
                         {[10, 15, 25, 50].map(distance => (
@@ -134,7 +134,7 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ level, swimmerId, onSub
                 </div>
             )}
 
-            <div className="p-4 border rounded-md">
+            <div className="p-4 border rounded-md bg-white">
                 <h3 className="text-lg font-semibold">Next steps</h3>
                 <div className="flex flex-col space-y-2 mt-2">
                     <label><input type="radio" name="next-steps" value="remain-beginner" className="radio radio-primary" /> Beginner - remain in current beginner group</label>
@@ -144,12 +144,24 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ level, swimmerId, onSub
                 </div>
             </div>
 
-            <div className="p-4 border rounded-md">
+            <div className="p-4 border rounded-md bg-white">
                 <h3 className="text-lg font-semibold">Additional Comments</h3>
-                <textarea placeholder="Any additional notes about the swimmer and the session" className="textarea textarea-bordered w-full" />
+                <div className="mt-3 pt-3 border-t border-gray-200 bg-gray-50 rounded-md">
+                    <textarea
+                        placeholder="Any additional notes about the swimmer and the session"
+                        className="textarea textarea-bordered w-full"
+                    />
+                </div>
             </div>
 
-            <button type="submit" className="btn btn-primary">Submit Evaluation</button>
+            <div className="flex justify-end">
+                <button
+                    type="submit"
+                    className="inline-flex items-center px-4 py-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                >
+                    Submit Evaluation
+                </button>
+            </div>
         </form>
     );
 };
