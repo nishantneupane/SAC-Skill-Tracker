@@ -217,10 +217,6 @@ export default function InstructorSwimmerDetail() {
               </div>
               <div>
                 <h1 className="text-xl font-semibold text-gray-900">{swimmer?.name}</h1>
-                <p className="text-sm text-gray-500">
-                  {swimmer?.age ? `Age ${swimmer.age} • ` : ''}
-                  {swimmer?.level}
-                </p>
               </div>
             </div>
           </div>
