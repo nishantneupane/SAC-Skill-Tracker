@@ -1,41 +1,35 @@
 /**
  * Account dashboard data endpoint.
- * Returns all parent-dashboard data in one payload so the page can stay
- * focused on rendering and avoid multiple client-side round trips.
+ * Returns all parent-dashboard data from a single database RPC.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdminClient } from '@/lib/supabaseAdmin';
 
-interface DashboardSkillItem {
-  id: string;
-  name: string;
-  mastered: boolean;
-  dateAcquired?: string;
-}
-
-interface DashboardSwimmer {
-  id: string;
-  name: string;
-  level: string;
-  nextSession: string;
-  classIds: string[];
-}
-
-interface DashboardNote {
-  id: string;
-  swimmerName: string;
-  note: string;
-  date: string;
-}
-
-function formatDate(dateValue?: string | null): string | undefined {
-  if (!dateValue) return undefined;
-  return new Date(dateValue).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
+interface DashboardPayload {
+  userName: string;
+  organizationName?: string;
+  swimmers: Array<{
+    id: string;
+    name: string;
+    level: string;
+    nextSession: string;
+  }>;
+  skillsBySwimmer: Record<
+    string,
+    Array<{
+      id: string;
+      name: string;
+      mastered: boolean;
+      dateAcquired?: string | null;
+    }>
+  >;
+  notes: Array<{
+    id: string;
+    swimmerName: string;
+    note: string;
+    date: string;
+  }>;
 }
 
 export async function GET(request: NextRequest) {
@@ -50,21 +44,18 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // 1) Resolve person by email (temporary while login is still localStorage based).
-    const { data: person, error: personError } = await supabaseAdmin
-      .from('person')
-      .select('person_id, first_name, last_name, email')
-      .ilike('email', email)
-      .maybeSingle();
+    const { data, error } = await supabaseAdmin.rpc('get_parent_dashboard', {
+      p_email: email,
+    });
 
-    if (personError) {
+    if (error) {
       return NextResponse.json(
-        { error: `Failed to load person: ${personError.message}` },
+        { error: `Failed to load dashboard: ${error.message}` },
         { status: 500 }
       );
     }
 
-    if (!person) {
+    if (!data) {
       return NextResponse.json(
         {
           userName: '',
@@ -77,222 +68,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const personDisplayName = `${person.first_name ?? ''} ${person.last_name ?? ''}`.trim();
-
-    // Fetch parent's organization
-    const { data: personOrg, error: personOrgError } = await supabaseAdmin
-      .from('person_organization')
-      .select('organization_id')
-      .eq('person_id', person.person_id)
-      .maybeSingle();
-
-    let organizationName = 'SAC Skill Tracker';
-    if (!personOrgError && personOrg) {
-      const { data: org } = await supabaseAdmin
-        .from('organization')
-        .select('name')
-        .eq('organization_id', personOrg.organization_id)
-        .maybeSingle();
-      if (org?.name) organizationName = org.name;
-    }
-
-    // 2) Fetch linked swimmers for this guardian.
-    const { data: guardianLinks, error: guardianLinksError } = await supabaseAdmin
-      .from('guardian_member')
-      .select('member_id')
-      .eq('guardian_person_id', person.person_id);
-
-    if (guardianLinksError) {
-      return NextResponse.json(
-        { error: `Failed to load guardian links: ${guardianLinksError.message}` },
-        { status: 500 }
-      );
-    }
-
-    const memberIds = (guardianLinks ?? []).map((link) => link.member_id);
-
-    if (memberIds.length === 0) {
-      return NextResponse.json({
-        userName: personDisplayName || person.email,
-        organizationName,
-        swimmers: [],
-        skillsBySwimmer: {},
-        notes: [],
-      });
-    }
-
-    // 3) Core swimmer rows.
-    const { data: members, error: membersError } = await supabaseAdmin
-      .from('member')
-      .select('member_id, first_name, last_name, level')
-      .in('member_id', memberIds);
-
-    if (membersError) {
-      return NextResponse.json(
-        { error: `Failed to load members: ${membersError.message}` },
-        { status: 500 }
-      );
-    }
-
-    // 4) Skills + progress rows.
-    const { data: memberSkillRows, error: memberSkillsError } = await supabaseAdmin
-      .from('member_skill')
-      .select('member_id, skill_id, progress, date_acquired')
-      .in('member_id', memberIds);
-
-    if (memberSkillsError) {
-      return NextResponse.json(
-        { error: `Failed to load member skills: ${memberSkillsError.message}` },
-        { status: 500 }
-      );
-    }
-
-    const uniqueSkillIds = Array.from(
-      new Set((memberSkillRows ?? []).map((row) => row.skill_id))
-    );
-
-    const skillsById = new Map<string, string>();
-    if (uniqueSkillIds.length > 0) {
-      const { data: skills, error: skillsError } = await supabaseAdmin
-        .from('skill')
-        .select('skill_id, name')
-        .in('skill_id', uniqueSkillIds);
-
-      if (skillsError) {
-        return NextResponse.json(
-          { error: `Failed to load skills: ${skillsError.message}` },
-          { status: 500 }
-        );
-      }
-
-      (skills ?? []).forEach((skill) => {
-        skillsById.set(skill.skill_id, skill.name);
-      });
-    }
-
-    // 5) Enrollment + class schedule (for next session text).
-    const { data: enrollments, error: enrollmentsError } = await supabaseAdmin
-      .from('enrollment')
-      .select('member_id, class_id')
-      .in('member_id', memberIds);
-
-    if (enrollmentsError) {
-      return NextResponse.json(
-        { error: `Failed to load enrollments: ${enrollmentsError.message}` },
-        { status: 500 }
-      );
-    }
-
-    const classIds = Array.from(new Set((enrollments ?? []).map((row) => row.class_id)));
-    const classById = new Map<string, { name: string; schedule: string | null }>();
-
-    if (classIds.length > 0) {
-      const { data: classes, error: classesError } = await supabaseAdmin
-        .from('class_entity')
-        .select('class_id, name, schedule')
-        .in('class_id', classIds);
-
-      if (classesError) {
-        return NextResponse.json(
-          { error: `Failed to load classes: ${classesError.message}` },
-          { status: 500 }
-        );
-      }
-
-      (classes ?? []).forEach((cls) => {
-        classById.set(cls.class_id, { name: cls.name, schedule: cls.schedule });
-      });
-    }
-
-    // 6) Notes/evaluations.
-    const { data: evaluations, error: evaluationsError } = await supabaseAdmin
-      .from('evaluation')
-      .select('evaluation_id, member_id, feedback, evaluation_date')
-      .in('member_id', memberIds)
-      .order('evaluation_date', { ascending: false })
-      .limit(20);
-
-    if (evaluationsError) {
-      return NextResponse.json(
-        { error: `Failed to load evaluations: ${evaluationsError.message}` },
-        { status: 500 }
-      );
-    }
-
-    const memberNameById = new Map<string, string>();
-    (members ?? []).forEach((member) => {
-      memberNameById.set(
-        member.member_id,
-        `${member.first_name} ${member.last_name}`.trim()
-      );
-    });
-
-    const nextSessionByMemberId = new Map<string, string>();
-    const classIdsByMemberId = new Map<string, string[]>();
-    (enrollments ?? []).forEach((enrollment) => {
-      const classIdsForMember = classIdsByMemberId.get(enrollment.member_id) ?? [];
-      if (!classIdsForMember.includes(enrollment.class_id)) {
-        classIdsForMember.push(enrollment.class_id);
-      }
-      classIdsByMemberId.set(enrollment.member_id, classIdsForMember);
-
-      // Keep the first class found as a lightweight "next session" placeholder.
-      if (nextSessionByMemberId.has(enrollment.member_id)) return;
-      const classInfo = classById.get(enrollment.class_id);
-      if (!classInfo) return;
-      nextSessionByMemberId.set(
-        enrollment.member_id,
-        classInfo.schedule
-          ? `${classInfo.name}: ${classInfo.schedule}`
-          : `${classInfo.name}: Schedule TBD`
-      );
-    });
-
-    const swimmers: DashboardSwimmer[] = (members ?? []).map((member) => ({
-      id: member.member_id,
-      name: `${member.first_name} ${member.last_name}`.trim(),
-      level: member.level ?? 'Unassigned level',
-      nextSession: nextSessionByMemberId.get(member.member_id) ?? 'No upcoming session',
-      classIds: classIdsByMemberId.get(member.member_id) ?? [],
-    }));
-
-    const skillsBySwimmer: Record<string, DashboardSkillItem[]> = {};
-    (memberSkillRows ?? []).forEach((row) => {
-      if (!skillsBySwimmer[row.member_id]) {
-        skillsBySwimmer[row.member_id] = [];
-      }
-
-      skillsBySwimmer[row.member_id].push({
-        id: row.skill_id,
-        name: skillsById.get(row.skill_id) ?? 'Unknown skill',
-        // date_acquired is the source of truth for "mastered" in current UI.
-        mastered: Boolean(row.date_acquired),
-        dateAcquired: formatDate(row.date_acquired),
-      });
-    });
-
-    // Stable display order: mastered first, then by skill name.
-    Object.keys(skillsBySwimmer).forEach((memberId) => {
-      skillsBySwimmer[memberId].sort((a, b) => {
-        if (a.mastered !== b.mastered) return a.mastered ? -1 : 1;
-        return a.name.localeCompare(b.name);
-      });
-    });
-
-    const notes: DashboardNote[] = (evaluations ?? []).map((evaluation) => ({
-      id: evaluation.evaluation_id,
-      swimmerName: memberNameById.get(evaluation.member_id) ?? 'Unknown swimmer',
-      note: evaluation.feedback ?? '',
-      date: formatDate(evaluation.evaluation_date) ?? '',
-    }));
-
-    return NextResponse.json({
-      userName: personDisplayName || person.email,
-      organizationName,
-      swimmers,
-      skillsBySwimmer,
-      notes,
-    });
+    return NextResponse.json(data as DashboardPayload);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown server error';
     return NextResponse.json({ error: message }, { status: 500 });
