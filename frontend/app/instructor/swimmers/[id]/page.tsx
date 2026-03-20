@@ -31,12 +31,21 @@ interface Skill {
   mastered: boolean;
   progress: number;
   dateAcquired?: string;
+  notes: NoteItem[];
+}
+
+interface NoteItem {
+  id: string;
+  date: string;
+  content: string;
+  author: string;
 }
 
 interface SwimmerPayload {
   swimmer: SwimmerDetail;
   classes: ClassInfo[];
   skills: Skill[];
+  sessionNotes: NoteItem[];
   error?: string;
 }
 
@@ -55,11 +64,11 @@ export default function InstructorSwimmerDetail() {
   const swimmerId = params.id as string;
 
   const [skillNotes, setSkillNotes] = useState<Record<string, string>>({});
-  const [savedSkillMastery, setSavedSkillMastery] = useState<Record<string, boolean>>({});
 
   const [swimmer, setSwimmer] = useState<SwimmerDetail | null>(null);
   const [classes, setClasses] = useState<ClassInfo[]>([]);
   const [skills, setSkills] = useState<Skill[]>([]);
+  const [sessionNotes, setSessionNotes] = useState<NoteItem[]>([]);
   const [selectedClassId, setSelectedClassId] = useState('');
 
   const [isLoading, setIsLoading] = useState(true);
@@ -96,9 +105,7 @@ export default function InstructorSwimmerDetail() {
       setSwimmer(payload.swimmer ?? null);
       setClasses(payload.classes ?? []);
       setSkills(payload.skills ?? []);
-      setSavedSkillMastery(
-        Object.fromEntries((payload.skills ?? []).map((skill) => [skill.id, skill.mastered]))
-      );
+      setSessionNotes(payload.sessionNotes ?? []);
       setSelectedClassId((payload.classes ?? [])[0]?.id ?? '');
     } catch (fetchError) {
       const message = fetchError instanceof Error ? fetchError.message : 'Unexpected error';
@@ -106,6 +113,7 @@ export default function InstructorSwimmerDetail() {
       setSwimmer(null);
       setClasses([]);
       setSkills([]);
+      setSessionNotes([]);
       setSelectedClassId('');
     } finally {
       setIsLoading(false);
@@ -152,8 +160,9 @@ export default function InstructorSwimmerDetail() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email,
-          note: note ? `Skill: ${skill.name}\nNote: ${note}` : undefined,
+          note: undefined,
           classId: selectedClassId || undefined,
+          skillNotes: [{ skillId: skill.id, note }],
         }),
       });
 
@@ -254,6 +263,35 @@ export default function InstructorSwimmerDetail() {
           </div>
         </section>
 
+        <section className="bg-white rounded-xl border border-gray-200 p-6">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900">Session Notes</h3>
+              <p className="text-xs text-gray-500 mt-1">General notes not tied to a specific skill.</p>
+            </div>
+            <div className="text-right">
+              <p className="text-xs text-gray-500">Progress</p>
+              <p className="text-sm font-semibold text-gray-900">{progressPct}% overall</p>
+            </div>
+          </div>
+
+          <div className="mt-4 space-y-3">
+            {sessionNotes.length > 0 ? (
+              sessionNotes.map((entry) => (
+                <div key={entry.id} className="rounded-lg border border-gray-100 bg-gray-50 px-4 py-3">
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                    <span>{entry.author}</span>
+                    <span>{entry.date}</span>
+                  </div>
+                  <p className="mt-2 text-sm text-gray-800 whitespace-pre-wrap">{entry.content}</p>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-gray-500">No session notes recorded yet.</p>
+            )}
+          </div>
+        </section>
+
         <section className="space-y-6">
             <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
               {skills.map((skill) => (
@@ -263,8 +301,38 @@ export default function InstructorSwimmerDetail() {
                       <p className={`text-sm ${skill.mastered ? 'text-gray-900' : 'text-gray-600'}`}>
                         {skill.name}
                       </p>
-                      {skill.mastered && skill.dateAcquired && (
-                        <p className="text-xs text-gray-400">Mastered on {skill.dateAcquired}</p>
+                      <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                        <span
+                          className={`rounded-full px-2 py-0.5 ${
+                            skill.progress === 100
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : 'bg-gray-100 text-gray-600'
+                          }`}
+                        >
+                          {skill.progress}% progress
+                        </span>
+                        {skill.mastered && skill.dateAcquired && (
+                          <span>Mastered on {skill.dateAcquired}</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-gray-100 bg-gray-50 px-4 py-3">
+                    <p className="text-xs font-semibold text-gray-700">Notes for this skill</p>
+                    <div className="mt-3 space-y-3">
+                      {skill.notes.length > 0 ? (
+                        skill.notes.map((entry) => (
+                          <div key={entry.id} className="rounded-lg border border-gray-200 bg-white px-3 py-3">
+                            <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                              <span>{entry.author}</span>
+                              <span>{entry.date}</span>
+                            </div>
+                            <p className="mt-2 whitespace-pre-wrap text-sm text-gray-800">{entry.content}</p>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-sm text-gray-500">No notes for this skill yet.</p>
                       )}
                     </div>
                   </div>

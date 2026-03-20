@@ -1,169 +1,321 @@
 "use client";
-import React, { useState } from 'react';
 
-const beginnerSkills = [
-    "Submerging",
-    "Rhythmic Breathing",
-    "Front Float",
-    "Front Glide",
-    "Back Float",
-    "Back Glide",
-    "Roll from back float to front",
-    "Roll from front float to back",
-    "Kicking",
-    "Front Swim",
-    "Front Crawl"
-];
+import { useEffect, useMemo, useState } from 'react';
 
-const intermediateSkills = [
-    "Treading Water",
-    "Freestyle Kicking",
-    "Freestyle swim - proficiency",
-    "Backstroke Kick",
-    "Backstroke swim - proficiency"
-];
-
-const proficiencyLevels = [
-    { value: 0, label: "0. Unable to attempt the skill" },
-    { value: 1, label: "1. Unable to show skill without significant support" },
-    { value: 2, label: "2. Inconsistently or with support is able to demonstrate the skill" },
-    { value: 3, label: "3. Consistently demonstrates application of the skill" },
-    { value: 4, label: "4. Demonstrates complete understanding of the skill" }
-];
-
-const levelMap: Record<number, string> = {
-    1: 'Beginner',
-    2: 'Intermediate',
-    // Add other level mappings as needed
-};
-
-interface EvaluationFormProps {
-  level: number;
-  swimmerId: string;
-  onSubmissionComplete: () => void;
+interface SkillItem {
+  id: string;
+  name: string;
+  progress: 0 | 25 | 50 | 75 | 100;
+  mastered: boolean;
+  dateAcquired?: string;
 }
 
-const EvaluationForm: React.FC<EvaluationFormProps> = ({ level, swimmerId, onSubmissionComplete }) => {
-    const levelName = levelMap[level] || 'Unknown';
-    const skills = levelName === 'Beginner' ? beginnerSkills : intermediateSkills;
-    const [evaluations, setEvaluations] = useState<Record<string, number>>({});
-    const [comments, setComments] = useState<Record<string, string>>({});
+interface ClassItem {
+  id: string;
+  name: string;
+  schedule: string;
+}
 
-    const handleEvalChange = (skill: string, value: number) => {
-        setEvaluations(prev => ({ ...prev, [skill]: value }));
-    };
+interface EvaluationFormProps {
+  swimmerId: string;
+  userEmail: string;
+  skills: SkillItem[];
+  classes: ClassItem[];
+  onSubmissionComplete?: () => void;
+}
 
-    const handleCommentChange = (skill: string, text: string) => {
-        setComments(prev => ({ ...prev, [skill]: text }));
-    };
+const PROGRESS_OPTIONS: Array<{ value: 0 | 25 | 50 | 75 | 100; label: string }> = [
+  { value: 0, label: '0% - Not started' },
+  { value: 25, label: '25% - Beginning' },
+  { value: 50, label: '50% - Developing' },
+  { value: 75, label: '75% - Nearly there' },
+  { value: 100, label: '100% - Acquired' },
+];
 
-    const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-        e.preventDefault();
-        // Here you would handle the form submission,
-        // for example, by sending the data to your backend.
-        console.log("Submitting for swimmer:", swimmerId);
-        console.log("Evaluations:", evaluations);
-        console.log("Comments:", comments);
-        // alert("Evaluation submitted!");
-        if (onSubmissionComplete) {
-            onSubmissionComplete();
-        }
-    };
+export default function EvaluationForm({
+  swimmerId,
+  userEmail,
+  skills,
+  classes,
+  onSubmissionComplete,
+}: EvaluationFormProps) {
+  const [progressBySkillId, setProgressBySkillId] = useState<Record<string, SkillItem['progress']>>({});
+  const [initialProgressBySkillId, setInitialProgressBySkillId] = useState<Record<string, SkillItem['progress']>>({});
+  const [skillNotesBySkillId, setSkillNotesBySkillId] = useState<Record<string, string>>({});
+  const [selectedClassId, setSelectedClassId] = useState('');
+  const [note, setNote] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
 
-    return (
-        <form onSubmit={handleSubmit} className="space-y-8 p-4 border rounded-lg shadow-md bg-gray-100">
-            <h2 className="text-2xl font-bold text-center">{levelName} Skill Evaluation</h2>
-            {skills.map(skill => (
-                <div key={skill} className="p-4 border rounded-md bg-white">
-                    <h3 className="text-lg font-semibold">{skill}</h3>
-                    <div className="flex items-center space-x-4 mt-2">
-                        {proficiencyLevels.map(level => (
-                            <label key={level.value} className="flex items-center space-x-2">
-                                <input
-                                    type="radio"
-                                    name={`${skill}-evaluation`}
-                                    value={level.value}
-                                    onChange={(e) => handleEvalChange(skill, parseInt(e.target.value))}
-                                    className="radio radio-primary"
-                                />
-                                <span>{level.value}</span>
-                            </label>
-                        ))}
-                    </div>
-                    <div className="mt-3 pt-3 border-t border-gray-200 bg-gray-50 rounded-md">
-                        <textarea
-                            placeholder="Comment"
-                            onChange={(e) => handleCommentChange(skill, e.target.value)}
-                            className="textarea textarea-bordered w-full"
-                        />
-                    </div>
+  useEffect(() => {
+    const nextProgress = Object.fromEntries(
+      skills.map((skill) => [skill.id, skill.progress])
+    ) as Record<string, SkillItem['progress']>;
+
+    setProgressBySkillId(nextProgress);
+    setInitialProgressBySkillId(nextProgress);
+    setSkillNotesBySkillId({});
+  }, [skills]);
+
+  useEffect(() => {
+    setSelectedClassId((current) => {
+      if (current && classes.some((classItem) => classItem.id === current)) {
+        return current;
+      }
+      return classes[0]?.id ?? '';
+    });
+  }, [classes]);
+
+  const changedSkillUpdates = useMemo(
+    () =>
+      skills
+        .map((skill) => ({
+          skillId: skill.id,
+          progress: progressBySkillId[skill.id] ?? 0,
+          initialProgress: initialProgressBySkillId[skill.id] ?? 0,
+        }))
+        .filter((skill) => skill.progress !== skill.initialProgress)
+        .map((skill) => ({
+          skillId: skill.skillId,
+          progress: skill.progress,
+        })),
+    [initialProgressBySkillId, progressBySkillId, skills]
+  );
+
+  const handleProgressChange = (skillId: string, progress: SkillItem['progress']) => {
+    setProgressBySkillId((prev) => ({
+      ...prev,
+      [skillId]: progress,
+    }));
+    setSuccessMessage('');
+  };
+
+  const skillNoteEntries = useMemo(
+    () =>
+      skills
+        .map((skill) => ({
+          skillId: skill.id,
+          skillName: skill.name,
+          note: skillNotesBySkillId[skill.id]?.trim() ?? '',
+        }))
+        .filter((entry) => entry.note.length > 0),
+    [skillNotesBySkillId, skills]
+  );
+
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const trimmedNote = note.trim();
+    if (changedSkillUpdates.length === 0 && !trimmedNote && skillNoteEntries.length === 0) {
+      setError('Update at least one skill or add notes before submitting.');
+      return;
+    }
+
+    if (!userEmail) {
+      setError('Missing instructor session. Please log in again.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setError('');
+    setSuccessMessage('');
+
+    try {
+      const response = await fetch(`/api/instructor/swimmers/${swimmerId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: userEmail,
+          classId: selectedClassId || undefined,
+          note: trimmedNote || undefined,
+          skillNotes: skillNoteEntries.map((entry) => ({
+            skillId: entry.skillId,
+            note: entry.note,
+          })),
+          skillUpdates: changedSkillUpdates,
+        }),
+      });
+
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error || 'Failed to submit evaluation.');
+      }
+
+      const nextProgress = Object.fromEntries(
+        skills.map((skill) => [skill.id, progressBySkillId[skill.id] ?? 0])
+      ) as Record<string, SkillItem['progress']>;
+
+      setInitialProgressBySkillId(nextProgress);
+      setSkillNotesBySkillId({});
+      setNote('');
+      setSuccessMessage('Evaluation saved.');
+      onSubmissionComplete?.();
+    } catch (submitError) {
+      const message =
+        submitError instanceof Error ? submitError.message : 'Failed to submit evaluation.';
+      setError(message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-5 rounded-xl border border-gray-200 bg-gray-50 p-4 sm:p-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-gray-900">Skill Evaluation</h3>
+          <p className="text-xs text-gray-500">
+            All organization skills are shown below. Save only the changes you made.
+          </p>
+        </div>
+
+        {classes.length > 0 && (
+          <div className="w-full sm:w-72">
+            <label className="mb-1 block text-xs font-medium text-gray-700">
+              Class context for note
+            </label>
+            <select
+              value={selectedClassId}
+              onChange={(event) => setSelectedClassId(event.target.value)}
+              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              {classes.map((classItem) => (
+                <option key={classItem.id} value={classItem.id}>
+                  {classItem.name} - {classItem.schedule}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+      </div>
+
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
+      {successMessage && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+          {successMessage}
+        </div>
+      )}
+
+      {!classes.length && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          This swimmer has no shared class with you. Skill and session notes will be saved without class context.
+        </div>
+      )}
+
+      <div className="space-y-3">
+        {skills.map((skill) => {
+          const progress = progressBySkillId[skill.id] ?? 0;
+
+          return (
+            <div
+              key={skill.id}
+              className="rounded-lg border border-gray-200 bg-white px-3 py-3 shadow-sm sm:px-4"
+            >
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-gray-900">{skill.name}</p>
+                  <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                    <span
+                      className={`rounded-full px-2 py-0.5 ${
+                        progress === 100
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : 'bg-gray-100 text-gray-600'
+                      }`}
+                    >
+                      {progress}% progress
+                    </span>
+                    {skill.dateAcquired && (
+                      <span>Acquired on {skill.dateAcquired}</span>
+                    )}
+                  </div>
                 </div>
-            ))}
 
-            {levelName === 'Intermediate' && (
-                 <div className="p-4 border rounded-md bg-white">
-                    <h3 className="text-lg font-semibold">Freestyle swim - distance</h3>
-                     <div className="flex items-center space-x-4 mt-2">
-                         {[10, 15, 25, 50].map(distance => (
-                             <label key={distance} className="flex items-center space-x-2">
-                                 <input type="radio" name="freestyle-distance" value={distance} className="radio radio-primary" />
-                                 <span>{distance} yards</span>
-                             </label>
-                         ))}
-                     </div>
-                     <div className="mt-2">
-                        <textarea placeholder="Notes regarding the freestyle stroke, breathing, and kicking technique" className="textarea textarea-bordered w-full" />
-                    </div>
-                 </div>
-            )}
-
-            {levelName === 'Intermediate' && (
-                <div className="p-4 border rounded-md bg-white">
-                    <h3 className="text-lg font-semibold">Backstroke swim - distance</h3>
-                    <div className="flex items-center space-x-4 mt-2">
-                        {[10, 15, 25, 50].map(distance => (
-                            <label key={distance} className="flex items-center space-x-2">
-                                <input type="radio" name="backstroke-distance" value={distance} className="radio radio-primary" />
-                                <span>{distance} yards</span>
-                            </label>
-                        ))}
-                    </div>
-                    <div className="mt-2">
-                        <textarea placeholder="Notes regarding the backstroke stroke, breathing, and kicking technique" className="textarea textarea-bordered w-full" />
-                    </div>
+                <div className="w-full sm:w-60">
+                  <label className="mb-1 block text-xs font-medium text-gray-700">
+                    Progress
+                  </label>
+                  <select
+                    value={progress}
+                    onChange={(event) =>
+                      handleProgressChange(
+                        skill.id,
+                        Number(event.target.value) as SkillItem['progress']
+                      )
+                    }
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {PROGRESS_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
-            )}
+              </div>
 
-            <div className="p-4 border rounded-md bg-white">
-                <h3 className="text-lg font-semibold">Next steps</h3>
-                <div className="flex flex-col space-y-2 mt-2">
-                    <label><input type="radio" name="next-steps" value="remain-beginner" className="radio radio-primary" /> Beginner - remain in current beginner group</label>
-                    <label><input type="radio" name="next-steps" value="progress-beginner" className="radio radio-primary" /> Beginner - showed significant progress and ready to move to next group</label>
-                    <label><input type="radio" name="next-steps" value="move-intermediate" className="radio radio-primary" /> Intermediate - able to do the beginner skills and swim independently for short distances</label>
-                    <label><input type="radio" name="next-steps" value="ready-swim-team" className="radio radio-primary" /> Ready for Swim Team!</label>
-                </div>
+              <div className="mt-3">
+                <label className="mb-1 block text-xs font-medium text-gray-700">
+                  Skill note
+                </label>
+                <textarea
+                  value={skillNotesBySkillId[skill.id] ?? ''}
+                  onChange={(event) => {
+                    setSkillNotesBySkillId((prev) => ({
+                      ...prev,
+                      [skill.id]: event.target.value,
+                    }));
+                    setSuccessMessage('');
+                  }}
+                  placeholder={`Optional note for ${skill.name}`}
+                  rows={2}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
             </div>
+          );
+        })}
 
-            <div className="p-4 border rounded-md bg-white">
-                <h3 className="text-lg font-semibold">Additional Comments</h3>
-                <div className="mt-3 pt-3 border-t border-gray-200 bg-gray-50 rounded-md">
-                    <textarea
-                        placeholder="Any additional notes about the swimmer and the session"
-                        className="textarea textarea-bordered w-full"
-                    />
-                </div>
-            </div>
+        {skills.length === 0 && (
+          <div className="rounded-lg border border-gray-200 bg-white px-4 py-4 text-sm text-gray-500">
+            No organization skills are configured yet.
+          </div>
+        )}
+      </div>
 
-            <div className="flex justify-end">
-                <button
-                    type="submit"
-                    className="inline-flex items-center px-4 py-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-                >
-                    Submit Evaluation
-                </button>
-            </div>
-        </form>
-    );
-};
+      <div className="rounded-lg border border-gray-200 bg-white p-4">
+        <label className="mb-2 block text-sm font-medium text-gray-900">
+          Session note
+        </label>
+        <textarea
+          value={note}
+          onChange={(event) => {
+            setNote(event.target.value);
+            setSuccessMessage('');
+          }}
+          placeholder="Optional note about this swimmer's session"
+          rows={4}
+          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+      </div>
 
-export default EvaluationForm;
+      <div className="flex items-center justify-end gap-3">
+        <p className="text-xs text-gray-500">
+          {changedSkillUpdates.length} skill {changedSkillUpdates.length === 1 ? 'change' : 'changes'} ready
+        </p>
+        <button
+          type="submit"
+          disabled={isSubmitting}
+          className="inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
+        >
+          {isSubmitting ? 'Saving...' : 'Save Evaluation'}
+        </button>
+      </div>
+    </form>
+  );
+}
