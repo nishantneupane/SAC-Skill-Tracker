@@ -76,6 +76,25 @@ as $$
     left join member_next_session mns on mns.member_id = mb.member_id
     left join member_class_ids mci on mci.member_id = mb.member_id
   ),
+  skill_notes_grouped as (
+    select
+      e.member_id,
+      e.skill_id,
+      jsonb_agg(
+        jsonb_build_object(
+          'id', e.evaluation_id,
+          'author', coalesce(nullif(trim(concat_ws(' ', p.first_name, p.last_name)), ''), 'Instructor'),
+          'content', coalesce(e.feedback, ''),
+          'date', to_char(e.evaluation_date, 'Mon FMDD, YYYY')
+        )
+        order by e.evaluation_date desc
+      ) as notes
+    from evaluation e
+    left join person p on p.person_id = e.instructor_person_id
+    join member_base mb on mb.member_id = e.member_id
+    where e.skill_id is not null
+    group by e.member_id, e.skill_id
+  ),
   skills_grouped as (
     select
       ms.member_id,
@@ -83,16 +102,22 @@ as $$
         jsonb_build_object(
           'id', ms.skill_id,
           'name', coalesce(s.name, 'Unknown skill'),
-          'mastered', (ms.date_acquired is not null),
+          'progress', coalesce(ms.progress, case when ms.date_acquired is not null then 100 else 0 end),
+          'mastered', (
+            coalesce(ms.progress, case when ms.date_acquired is not null then 100 else 0 end) = 100
+            or ms.date_acquired is not null
+          ),
           'dateAcquired', case
             when ms.date_acquired is null then null
             else to_char(ms.date_acquired, 'Mon FMDD, YYYY')
-          end
+          end,
+          'notes', coalesce(sng.notes, '[]'::jsonb)
         )
-        order by (ms.date_acquired is not null) desc, s.name asc
+        order by coalesce(ms.progress, case when ms.date_acquired is not null then 100 else 0 end) desc, s.name asc
       ) as skills
     from member_skill ms
     left join skill s on s.skill_id = ms.skill_id
+    left join skill_notes_grouped sng on sng.member_id = ms.member_id and sng.skill_id = ms.skill_id
     join member_base mb on mb.member_id = ms.member_id
     group by ms.member_id
   ),
@@ -106,44 +131,15 @@ as $$
     ) as skills_by_swimmer
     from member_base mb
     left join skills_grouped sg on sg.member_id = mb.member_id
-  ),
-  notes_limited as (
-    select
-      e.evaluation_id,
-      e.member_id,
-      e.feedback,
-      e.evaluation_date
-    from evaluation e
-    join member_base mb on mb.member_id = e.member_id
-    order by e.evaluation_date desc
-    limit 20
-  ),
-  notes_json as (
-    select coalesce(
-      jsonb_agg(
-        jsonb_build_object(
-          'id', nl.evaluation_id,
-          'swimmerName', mb.name,
-          'note', coalesce(nl.feedback, ''),
-          'date', to_char(nl.evaluation_date, 'Mon FMDD, YYYY')
-        )
-        order by nl.evaluation_date desc
-      ),
-      '[]'::jsonb
-    ) as notes
-    from notes_limited nl
-    join member_base mb on mb.member_id = nl.member_id
   )
   select jsonb_build_object(
     'userName', coalesce(nullif(tp.display_name, ''), tp.email),
     'organizationName', coalesce(po.name, 'SAC Skill Tracker'),
     'swimmers', sj.swimmers,
-    'skillsBySwimmer', sbj.skills_by_swimmer,
-    'notes', nj.notes
+    'skillsBySwimmer', sbj.skills_by_swimmer
   )
   from target_person tp
   left join person_org po on true
   cross join swimmers_json sj
-  cross join skills_by_swimmer_json sbj
-  cross join notes_json nj;
+  cross join skills_by_swimmer_json sbj;
 $$;
