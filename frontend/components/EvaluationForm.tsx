@@ -202,12 +202,6 @@ export default function EvaluationForm({
         </div>
       )}
 
-      {!classes.length && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-          This swimmer has no shared class with you. Skill and session notes will be saved without class context.
-        </div>
-      )}
-
       <div className="space-y-3">
         {skills.map((skill) => {
           const progress = progressBySkillId[skill.id] ?? 0;
@@ -240,22 +234,32 @@ export default function EvaluationForm({
                   <label className="mb-1 block text-xs font-medium text-gray-700">
                     Progress
                   </label>
-                  <select
-                    value={progress}
-                    onChange={(event) =>
-                      handleProgressChange(
-                        skill.id,
-                        Number(event.target.value) as SkillItem['progress']
-                      )
-                    }
-                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    {PROGRESS_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="flex flex-wrap gap-2">
+                    {PROGRESS_OPTIONS.map((option) => {
+                      const isActive = progress === option.value;
+
+                      return (
+                        <label
+                          key={option.value}
+                          className={`flex cursor-pointer items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                            isActive
+                              ? 'border-blue-600 bg-blue-50 text-blue-700'
+                              : 'border-gray-300 bg-white text-gray-600 hover:border-gray-400'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name={`progress-${skill.id}`}
+                            value={option.value}
+                            checked={isActive}
+                            onChange={() => handleProgressChange(skill.id, option.value)}
+                            className="h-3.5 w-3.5 accent-blue-600"
+                          />
+                          <span>{option.value}%</span>
+                        </label>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
 

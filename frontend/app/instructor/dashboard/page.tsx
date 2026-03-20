@@ -251,20 +251,14 @@ export default function InstructorDashboard() {
                           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-500">
                             <span>{mastered}/{swimmer.skills.length} skills acquired</span>
                             <span>{pct}% complete</span>
-                            {swimmer.classes.length > 0 ? (
-                              swimmer.classes.map((classItem) => (
-                                <span
-                                  key={classItem.id}
-                                  className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] text-gray-600"
-                                >
-                                  {classItem.name}
-                                </span>
-                              ))
-                            ) : (
-                              <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] text-amber-700">
-                                Direct assignment only
+                            {swimmer.classes.map((classItem) => (
+                              <span
+                                key={classItem.id}
+                                className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] text-gray-600"
+                              >
+                                {classItem.name}
                               </span>
-                            )}
+                            ))}
                           </div>
                         </div>
                       </div>
